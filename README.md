@@ -34,7 +34,25 @@ The separate provider is intentional. OpenCode 2's native Anthropic route curren
 
 ## Install
 
-Until the first npm release, load the local checkout explicitly:
+Add the published package to your OpenCode 2 configuration:
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": ["opencode-claude-auth-v2@latest"],
+}
+```
+
+Restart OpenCode 2 after changing plugin configuration.
+
+For local development, build the checkout:
+
+```bash
+pnpm install
+pnpm build
+```
+
+Then load its absolute entrypoint instead:
 
 ```jsonc
 {
@@ -45,14 +63,18 @@ Until the first npm release, load the local checkout explicitly:
 }
 ```
 
-Build it first:
+## Migrating from OpenCode 1
 
-```bash
-pnpm install
-pnpm build
+OpenCode 1 uses the singular `plugin` field and the original package:
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": ["opencode-claude-auth@latest"],
+}
 ```
 
-After publication, the configuration will be:
+When upgrading to OpenCode 2, replace it with the plural `plugins` field and this v2 package:
 
 ```jsonc
 {
@@ -61,7 +83,45 @@ After publication, the configuration will be:
 }
 ```
 
-Restart OpenCode 2 after changing plugin configuration.
+The OpenCode 1 plugin and its saved connection are not used by the OpenCode 2 integration. Ensure Claude Code is signed in
+with `claude auth login`, restart OpenCode 2, then run `/connect` and choose **Claude Subscription > Import Claude Code
+subscription**. If Claude Code is already signed in on the device, the existing Keychain or credentials-file entry can be
+imported without another browser login.
+
+Update explicit model references from `anthropic/<model>` to `claude-subscription/<model>`, then use `/models` to select a
+model under **Claude Subscription**.
+
+## Running OpenCode 1 and 2 Side by Side
+
+Do not put both `plugin` and `plugins` in the same configuration. OpenCode 1 rejects the OpenCode 2 `plugins` field.
+
+Keep the existing OpenCode 1 configuration at `~/.config/opencode/opencode.json`. Create a separate OpenCode 2 config root:
+
+```bash
+mkdir -p "$HOME/.config/opencode-v2/opencode"
+```
+
+Create `~/.config/opencode-v2/opencode/opencode.json` with:
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": ["opencode-claude-auth-v2@latest"],
+}
+```
+
+Add this alias to `~/.zshrc` or `~/.bashrc`:
+
+```bash
+alias oc2='XDG_CONFIG_HOME="$HOME/.config/opencode-v2" XDG_DATA_HOME="$HOME/.local/share/opencode-v2" XDG_STATE_HOME="$HOME/.local/state/opencode-v2" XDG_CACHE_HOME="$HOME/.cache/opencode-v2" opencode2'
+```
+
+Restart the shell, then use `opencode` for OpenCode 1 and `oc2` for OpenCode 2. The alias isolates configuration, sessions,
+state, and plugin caches while leaving `HOME` unchanged, so the v2 plugin can still import Claude Code credentials from the
+Keychain or `~/.claude/.credentials.json`.
+
+Project-level `opencode.json` files are still discovered by both versions. Keep version-specific `plugin` or `plugins`
+entries in the separate global configurations when using both versions side by side.
 
 ## Use
 
@@ -73,8 +133,6 @@ opencode2
 
 Run `/connect` once and choose **Claude Subscription > Import Claude Code subscription**. You can repeat that flow to
 replace the stored connection or switch Claude Code accounts.
-
-OpenCode 1's singular `plugin` field is not supported. OpenCode 2 uses the plural `plugins` field.
 
 ## Why Not `ai-sdk-provider-claude-code`?
 
