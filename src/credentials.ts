@@ -242,6 +242,40 @@ export function refreshViaOAuth(
   }
 }
 
+export async function refreshViaOAuthAsync(
+  refreshToken: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<ClaudeCredentials | null> {
+  log("refresh_started", { source: "oauth" })
+  try {
+    const response = await fetchImpl(OAUTH_TOKEN_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        client_id: OAUTH_CLIENT_ID,
+        refresh_token: refreshToken,
+      }),
+    })
+    if (!response.ok) {
+      log("refresh_failed", { source: "oauth", status: response.status })
+      return null
+    }
+    const credentials = parseOAuthResponse(await response.text(), refreshToken)
+    log(credentials ? "refresh_success" : "refresh_failed", {
+      source: "oauth",
+      ...(credentials ? {} : { error: "no access_token in response" }),
+    })
+    return credentials
+  } catch (error) {
+    log("refresh_failed", {
+      source: "oauth",
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return null
+  }
+}
+
 function refreshViaCli(): void {
   const maxAttempts = 2
   for (let i = 0; i < maxAttempts; i++) {

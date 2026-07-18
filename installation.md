@@ -1,98 +1,66 @@
-# Install opencode-claude-auth
+# Install opencode-claude-auth-v2
 
-These instructions are designed for AI coding agents.
+These instructions target OpenCode 2 only.
 
 ## Prerequisites
 
-Before installing, verify you have OpenCode and Claude Code installed and authenticated.
-
-### Check OpenCode version
-
 ```bash
-opencode --version
+opencode2 --version
+claude auth login
 ```
 
-You should see a version number (e.g., `1.2.28`).
-
-### Check Claude Code credentials (macOS)
+OpenCode 2 is currently installed with:
 
 ```bash
-security find-generic-password -s "Claude Code-credentials" -w
+npm install -g @opencode-ai/cli@next
 ```
 
-If this returns credentials, you're authenticated. If it fails or returns nothing, try the fallback:
+## Local Checkout
 
-### Check Claude Code credentials (fallback for all platforms)
+Build this repository:
 
 ```bash
-cat ~/.claude/.credentials.json
+pnpm install
+pnpm build
 ```
 
-If this file exists and contains valid JSON, you're authenticated.
+Add its absolute entrypoint to `~/.config/opencode/opencode.json`:
 
-### If credentials don't exist
-
-Run Claude Code to authenticate:
-
-```bash
-claude
-```
-
-This will prompt you to log in and store credentials in Keychain (macOS) or `~/.claude/.credentials.json` (other platforms).
-
-## Installation
-
-### Step 1: Add to OpenCode configuration
-
-Edit the OpenCode configuration file at `~/.config/opencode/opencode.json`.
-
-Add `opencode-claude-auth@latest` to the `plugin` array:
-
-```json
+```jsonc
 {
-  "plugin": ["opencode-claude-auth@latest"]
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": [
+    "/absolute/path/to/opencode-claude-auth-v2/opencode-claude-auth.js",
+  ],
 }
 ```
 
-Or run this command to do it automatically:
+## Published Package
 
-```bash
-node -e "
-const fs = require('fs'), p = require('path').join(require('os').homedir(), '.config/opencode/opencode.json');
-const c = fs.existsSync(p) ? JSON.parse(fs.readFileSync(p,'utf8')) : {};
-c.plugin = [...new Set([...(Array.isArray(c.plugin) ? c.plugin : []), 'opencode-claude-auth@latest'])];
-fs.mkdirSync(require('path').dirname(p), {recursive:true});
-fs.writeFileSync(p, JSON.stringify(c, null, 2));
-console.log('Added opencode-claude-auth@latest to', p);
-"
+After the npm package is available, use:
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": ["opencode-claude-auth-v2@latest"],
+}
 ```
 
-The `@latest` tag ensures OpenCode always pulls the newest version on startup. No manual `npm install` is needed — OpenCode [automatically installs npm plugins using Bun at startup](https://opencode.ai/docs/plugins/#how-plugins-are-installed).
+Quit and restart OpenCode 2 after changing the configuration.
 
-### Step 2: Verification
-
-Verify the plugin was added:
+## Verify
 
 ```bash
-cat ~/.config/opencode/opencode.json
+opencode2 plugin list
 ```
 
-You should see `opencode-claude-auth@latest` in the `plugin` array.
+The list should contain:
 
-## Upgrading
-
-If you previously installed `opencode-claude-auth` without the `@latest` tag, update your config to use `opencode-claude-auth@latest` as shown above.
-
-If the plugin isn't picking up a new version, clear the cached package and restart OpenCode:
-
-```bash
-rm -rf ~/.cache/opencode/packages/opencode-claude-auth@latest/
+```text
+heymaaz.claude-auth-v2
 ```
 
-## Done
+In the TUI, run `/connect`, select **Claude Subscription**, and choose **Import Claude Code subscription**. Then use
+`/models` and choose a model under **Claude Subscription**.
 
-The plugin is now installed and configured. When you run OpenCode, it will automatically use your Claude Code credentials — no separate login needed.
-
-## Troubleshooting
-
-If you encounter issues, see the [main README troubleshooting section](README.md#troubleshooting).
+For loader failures, inspect `~/.local/share/opencode/log/opencode.log` or run with `OPENCODE_LOG_LEVEL=DEBUG`.

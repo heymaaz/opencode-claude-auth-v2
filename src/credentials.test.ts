@@ -1,6 +1,10 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { refreshViaOAuth, parseOAuthResponse } from "./credentials.ts"
+import {
+  refreshViaOAuth,
+  refreshViaOAuthAsync,
+  parseOAuthResponse,
+} from "./credentials.ts"
 import { chmodSync, mkdirSync, statSync, writeFileSync } from "node:fs"
 import { mkdtemp, readFile, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -527,6 +531,36 @@ export function buildAccountLabels(creds) { return creds.map((_, i) => \`Account
 describe("refreshViaOAuth", () => {
   it("is exported as a function", () => {
     assert.equal(typeof refreshViaOAuth, "function")
+  })
+
+  it("refreshes asynchronously for the V2 Integration", async () => {
+    let body = ""
+    const result = await refreshViaOAuthAsync(
+      "old-refresh",
+      async (_input, init) => {
+        body = String(init?.body)
+        return new Response(
+          JSON.stringify({
+            access_token: "new-access",
+            refresh_token: "new-refresh",
+            expires_in: 3600,
+          }),
+        )
+      },
+    )
+    assert.ok(result)
+    assert.equal(result.accessToken, "new-access")
+    assert.equal(result.refreshToken, "new-refresh")
+    assert.match(body, /grant_type=refresh_token/)
+    assert.match(body, /refresh_token=old-refresh/)
+  })
+
+  it("returns null when the asynchronous refresh is rejected", async () => {
+    const result = await refreshViaOAuthAsync(
+      "old-refresh",
+      async () => new Response("denied", { status: 401 }),
+    )
+    assert.equal(result, null)
   })
 })
 
