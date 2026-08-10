@@ -1,5 +1,65 @@
 # Changelog
 
+## [2.1.6](https://github.com/griffinmartin/opencode-claude-auth/compare/v2.1.5...v2.1.6) (2026-08-03)
+
+
+### Bug Fixes
+
+* make OAuth refresh resilient to transient rate-limits (+ diagnostics) ([#264](https://github.com/griffinmartin/opencode-claude-auth/issues/264)) ([5532c37](https://github.com/griffinmartin/opencode-claude-auth/commit/5532c37dec127f0a6cac2308901e030d75331f1a))
+* preserve thinking blocks when repairing tool pairs after compaction ([#263](https://github.com/griffinmartin/opencode-claude-auth/issues/263)) ([8de49c8](https://github.com/griffinmartin/opencode-claude-auth/commit/8de49c81a0effeb0217b2d98aa7d7b4a1f389ed3))
+
+## [2.1.5](https://github.com/griffinmartin/opencode-claude-auth/compare/v2.1.4...v2.1.5) (2026-07-30)
+
+
+### Bug Fixes
+
+* handle external rotation of the Claude Code credential ([#260](https://github.com/griffinmartin/opencode-claude-auth/issues/260)) ([5a44883](https://github.com/griffinmartin/opencode-claude-auth/commit/5a44883817bfc7f1aa497f2c06432d7e5c472c08))
+* refresh OAuth tokens with native fetch instead of a subprocess ([#258](https://github.com/griffinmartin/opencode-claude-auth/issues/258)) ([231165b](https://github.com/griffinmartin/opencode-claude-auth/commit/231165b9859c6195c412896e1207daf2aed4affa))
+
+## [2.1.4](https://github.com/griffinmartin/opencode-claude-auth/compare/v2.1.3...v2.1.4) (2026-07-26)
+
+
+### Bug Fixes
+
+* proactive OAuth token refresh before session expiry ([#238](https://github.com/griffinmartin/opencode-claude-auth/issues/238)) ([ed1d735](https://github.com/griffinmartin/opencode-claude-auth/commit/ed1d7357b62eb9e50461ef3e6b6f447bbc68fd71))
+
+## [2.1.3](https://github.com/griffinmartin/opencode-claude-auth/compare/v2.1.2...v2.1.3) (2026-07-25)
+
+
+### Bug Fixes
+
+* honor `CLAUDE_CONFIG_DIR` ([#239](https://github.com/griffinmartin/opencode-claude-auth/issues/239)) ([65e1bb3](https://github.com/griffinmartin/opencode-claude-auth/commit/65e1bb367bd92bbae57e74d6c4d8db0ae91d688f))
+
+## [2.1.2](https://github.com/griffinmartin/opencode-claude-auth/compare/v2.1.1...v2.1.2) (2026-07-25)
+
+
+### Bug Fixes
+
+* update credential handling to prioritize primary service for token refresh ([#99](https://github.com/griffinmartin/opencode-claude-auth/issues/99)) ([9dd33d6](https://github.com/griffinmartin/opencode-claude-auth/commit/9dd33d69cca6de9e09284e99334b7edfb3686a3c))
+
+## [2.1.1](https://github.com/griffinmartin/opencode-claude-auth/compare/v2.1.0...v2.1.1) (2026-07-25)
+
+
+### Bug Fixes
+
+* enforce tool_result adjacency in repairToolPairs ([#250](https://github.com/griffinmartin/opencode-claude-auth/issues/250)) ([d056c7c](https://github.com/griffinmartin/opencode-claude-auth/commit/d056c7c9d8e34ebb421022005cf16f268b383281))
+* recover after external OAuth credential rotation ([#252](https://github.com/griffinmartin/opencode-claude-auth/issues/252)) ([0242e85](https://github.com/griffinmartin/opencode-claude-auth/commit/0242e858ae45aaea0cae55f00a42287b3e501ea5))
+
+## [2.1.0](https://github.com/griffinmartin/opencode-claude-auth/compare/v2.0.1...v2.1.0) (2026-07-25)
+
+
+### Features
+
+* update model config for Claude CLI 2.1.217, fix 401 credential refresh, repo hygiene ([#248](https://github.com/griffinmartin/opencode-claude-auth/issues/248)) ([ab54ebb](https://github.com/griffinmartin/opencode-claude-auth/commit/ab54ebb85d6812c04c7f2809840dd525f2638058))
+
+## [2.0.1](https://github.com/griffinmartin/opencode-claude-auth/compare/v2.0.0...v2.0.1) (2026-07-25)
+
+
+### Bug Fixes
+
+* keep API errors out of terminal UI ([#244](https://github.com/griffinmartin/opencode-claude-auth/issues/244)) ([baf1ffd](https://github.com/griffinmartin/opencode-claude-auth/commit/baf1ffd0b10ebdb5b5bc03464b93def1219de671))
+* normalize fractional credential expiry timestamps ([#246](https://github.com/griffinmartin/opencode-claude-auth/issues/246)) ([686a543](https://github.com/griffinmartin/opencode-claude-auth/commit/686a54395d23388c7c0193d112d4ca973034bbed))
+
 ## [2.0.0](https://github.com/griffinmartin/opencode-claude-auth/compare/v1.5.4...v2.0.0) (2026-07-08)
 
 

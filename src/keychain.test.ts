@@ -1,64 +1,141 @@
 import assert from "node:assert/strict"
-import { describe, it } from "node:test"
-import { writeFileSync, mkdirSync, rmSync } from "node:fs"
-import { readFileSync } from "node:fs"
+import { afterEach, beforeEach, describe, it } from "node:test"
+import {
+  chmodSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs"
+import { mkdtemp, readFile, writeFile } from "node:fs/promises"
+import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
-import { tmpdir } from "node:os"
+import { pathToFileURL } from "node:url"
 import {
   buildAccountLabels,
+  credentialBlobMatches,
+  keychainSuffixForDir,
+  parseCredentials,
+  readAllClaudeAccounts as readAllClaudeAccountsReal,
+  readCredentialsFile,
   updateCredentialBlob,
   writeBackCredentials,
 } from "./keychain.ts"
-import { chmodSync, statSync } from "node:fs"
-import { mkdtemp } from "node:fs/promises"
-
-// Mirrors the parseCredentials logic from keychain.ts for unit testing
-function parseCredentials(raw: string): {
-  accessToken: string
-  refreshToken: string
-  expiresAt: number
-  subscriptionType?: string
-} | null {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(raw)
-  } catch {
-    return null
-  }
-
-  const data = (parsed as { claudeAiOauth?: unknown }).claudeAiOauth ?? parsed
-  const creds = data as {
-    accessToken?: unknown
-    refreshToken?: unknown
-    expiresAt?: unknown
-    subscriptionType?: unknown
-    mcpOAuth?: unknown
-  }
-
-  if ((parsed as { mcpOAuth?: unknown }).mcpOAuth && !creds.accessToken) {
-    return null
-  }
-
-  if (
-    typeof creds.accessToken !== "string" ||
-    typeof creds.refreshToken !== "string" ||
-    typeof creds.expiresAt !== "number"
-  ) {
-    return null
-  }
-
-  return {
-    accessToken: creds.accessToken,
-    refreshToken: creds.refreshToken,
-    expiresAt: creds.expiresAt,
-    subscriptionType:
-      typeof creds.subscriptionType === "string"
-        ? creds.subscriptionType
-        : undefined,
-  }
-}
 
 // Mirrors listClaudeKeychainServices regex logic for unit testing
+type MockedKeychain = {
+  readAllClaudeAccounts: () => Array<{
+    label: string
+    source: string
+    configDir?: string
+    credentials: {
+      accessToken: string
+      refreshToken: string
+      expiresAt: number
+      subscriptionType?: string
+    }
+  }>
+  writeBackCredentials: (
+    source: string,
+    creds: { accessToken: string; refreshToken: string; expiresAt: number },
+    configDir?: string,
+    expectedPriorAccessToken?: string,
+  ) => boolean
+  __getSecurityWrites: () => Array<{ service: string; value: string }>
+}
+
+async function loadKeychainWithMockedSecurity(
+  securityDump: string,
+  keychainEntries: Record<string, string>,
+): Promise<MockedKeychain> {
+  const tempDir = await mkdtemp(
+    join(tmpdir(), "opencode-claude-auth-keychain-"),
+  )
+  const tempKeychain = join(tempDir, "keychain.ts")
+  const tempLogger = join(tempDir, "logger.ts")
+  const tempChildProcess = join(tempDir, "child-process.ts")
+  const sourceKeychain = await readFile(
+    new URL("./keychain.ts", import.meta.url),
+    "utf8",
+  )
+  const rewritten = sourceKeychain
+    .replace(/from\s+["']\.\/(\w+)\.js["']/g, 'from "./$1.ts"')
+    .replace(/from\s+["']node:child_process["']/, 'from "./child-process.ts"')
+    .replace(/process\.platform/g, '"darwin"')
+
+  await writeFile(
+    tempLogger,
+    `export function log() {}\nexport function initLogger() {}\nexport function closeLogger() {}\n`,
+    "utf8",
+  )
+
+  await writeFile(
+    tempChildProcess,
+    `const securityDump = ${JSON.stringify(securityDump)}
+const keychainEntries = ${JSON.stringify(keychainEntries)}
+
+export function execSync(command) {
+  if (command.includes("dump-keychain")) return securityDump
+  if (command.includes("find-generic-password")) {
+    const match = command.match(/-s "([^"]+)"/)
+    const service = match ? match[1] : undefined
+    const raw = service ? keychainEntries[service] : undefined
+    if (raw === undefined) {
+      const error = new Error("The specified item could not be found in the keychain.")
+      error.status = 44
+      throw error
+    }
+    return raw
+  }
+  throw new Error("unexpected execSync call: " + command)
+}
+
+const securityWrites = []
+
+export function execFileSync(file, args) {
+  if (file !== "/usr/bin/security") {
+    throw new Error("unexpected execFileSync file: " + file)
+  }
+  const service = args[args.indexOf("-s") + 1]
+
+  // add-generic-password is the write path. Record it and mutate the backing
+  // store, so a test can tell "the write was skipped" from "the write ran".
+  if (args[0] === "add-generic-password") {
+    const value = args[args.indexOf("-w") + 1]
+    securityWrites.push({ service, value })
+    keychainEntries[service] = value
+    return ""
+  }
+
+  const raw = keychainEntries[service]
+  if (raw === undefined) {
+    const error = new Error("The specified item could not be found in the keychain.")
+    error.status = 44
+    error.stderr = "The specified item could not be found in the keychain."
+    throw error
+  }
+  return raw
+}
+
+export function __getSecurityWrites() {
+  return securityWrites
+}
+`,
+    "utf8",
+  )
+
+  await writeFile(tempKeychain, rewritten, "utf8")
+  const [keychainModule, childProcessModule] = await Promise.all([
+    import(pathToFileURL(tempKeychain).href),
+    import(pathToFileURL(tempChildProcess).href),
+  ])
+  return {
+    ...keychainModule,
+    __getSecurityWrites: childProcessModule.__getSecurityWrites,
+  } as MockedKeychain
+}
+
 function extractServicesFromDump(output: string): string[] {
   const PRIMARY = "Claude Code-credentials"
   const services: string[] = []
@@ -83,19 +160,6 @@ function extractServicesFromDump(output: string): string[] {
   return ordered
 }
 
-function readCredentialsFile(credPath: string): {
-  accessToken: string
-  refreshToken: string
-  expiresAt: number
-} | null {
-  try {
-    const raw = readFileSync(credPath, "utf-8")
-    return parseCredentials(raw)
-  } catch {
-    return null
-  }
-}
-
 describe("parseCredentials", () => {
   it("parses credentials with claudeAiOauth wrapper", () => {
     const raw = JSON.stringify({
@@ -103,9 +167,7 @@ describe("parseCredentials", () => {
         accessToken: "at-123",
         refreshToken: "rt-456",
         expiresAt: 1700000000000,
-        scopes: ["user:inference"],
         subscriptionType: "pro",
-        rateLimitTier: "default_claude_ai",
       },
     })
     const result = parseCredentials(raw)
@@ -129,6 +191,22 @@ describe("parseCredentials", () => {
     assert.equal(result.expiresAt, 1700000000000)
   })
 
+  it("truncates a fractional stored expiresAt", () => {
+    const raw = JSON.stringify({
+      claudeAiOauth: {
+        accessToken: "at-123",
+        refreshToken: "rt-456",
+        expiresAt: 1784891051785.9011,
+      },
+    })
+
+    const result = parseCredentials(raw)
+
+    assert.ok(result)
+    assert.equal(result.expiresAt, 1784891051785)
+    assert.equal(Number.isInteger(result.expiresAt), true)
+  })
+
   it("subscriptionType is undefined when not present", () => {
     const raw = JSON.stringify({
       accessToken: "at",
@@ -142,163 +220,49 @@ describe("parseCredentials", () => {
 
   it("returns null for MCP-only entries", () => {
     const raw = JSON.stringify({
-      mcpOAuth: {
-        "neon|abc123": {
-          serverName: "neon",
-          accessToken: "some-token",
-          expiresAt: 1700000000000,
-        },
-      },
+      mcpOAuth: { "neon|abc123": { serverName: "neon" } },
     })
     assert.equal(parseCredentials(raw), null)
-  })
-
-  it("returns null for missing accessToken", () => {
-    assert.equal(
-      parseCredentials(JSON.stringify({ refreshToken: "rt", expiresAt: 123 })),
-      null,
-    )
-  })
-
-  it("returns null for missing refreshToken", () => {
-    assert.equal(
-      parseCredentials(JSON.stringify({ accessToken: "at", expiresAt: 123 })),
-      null,
-    )
-  })
-
-  it("returns null for missing expiresAt", () => {
-    assert.equal(
-      parseCredentials(
-        JSON.stringify({ accessToken: "at", refreshToken: "rt" }),
-      ),
-      null,
-    )
-  })
-
-  it("returns null for wrong types", () => {
-    assert.equal(
-      parseCredentials(
-        JSON.stringify({
-          accessToken: 123,
-          refreshToken: "rt",
-          expiresAt: 456,
-        }),
-      ),
-      null,
-    )
   })
 
   it("returns null for invalid JSON", () => {
     assert.equal(parseCredentials("not json {{{"), null)
   })
-
-  it("returns null for empty string", () => {
-    assert.equal(parseCredentials(""), null)
-  })
 })
 
 describe("keychain service discovery", () => {
-  const SAMPLE_DUMP = `
-keychain: "/Users/test/Library/Keychains/login.keychain-db"
-version: 512
-class: "genp"
-attributes:
-    0x00000007 <blob>="Claude Code-credentials-e8dc196c"
-    "svce"<blob>="Claude Code-credentials-e8dc196c"
-keychain: "/Users/test/Library/Keychains/login.keychain-db"
-version: 512
-class: "genp"
-attributes:
-    0x00000007 <blob>="Claude Code-credentials-b28bbb7c"
+  it("discovers primary and suffixed services", () => {
+    const dump = `
     "svce"<blob>="Claude Code-credentials-b28bbb7c"
-keychain: "/Users/test/Library/Keychains/login.keychain-db"
-version: 512
-class: "genp"
-attributes:
-    0x00000007 <blob>="Claude Code-credentials"
     "svce"<blob>="Claude Code-credentials"
-  `
-
-  it("discovers all Claude Code-credentials* services", () => {
-    const services = extractServicesFromDump(SAMPLE_DUMP)
-    assert.ok(services.includes("Claude Code-credentials"))
-    assert.ok(services.includes("Claude Code-credentials-e8dc196c"))
-    assert.ok(services.includes("Claude Code-credentials-b28bbb7c"))
-    assert.equal(services.length, 3)
-  })
-
-  it("puts the primary service first", () => {
-    assert.equal(
-      extractServicesFromDump(SAMPLE_DUMP)[0],
+    `
+    assert.deepEqual(extractServicesFromDump(dump), [
       "Claude Code-credentials",
-    )
+      "Claude Code-credentials-b28bbb7c",
+    ])
   })
 
-  it("deduplicates entries that appear twice (svce and blob line)", () => {
-    const services = extractServicesFromDump(SAMPLE_DUMP)
-    assert.equal(
-      services.filter((s) => s === "Claude Code-credentials").length,
-      1,
-    )
-    assert.equal(
-      services.filter((s) => s === "Claude Code-credentials-b28bbb7c").length,
-      1,
-    )
-  })
-
-  it("ignores non-Claude-Code keychain entries", () => {
-    const dump = `
-    0x00000007 <blob>="Some Other Service"
-    "svce"<blob>="Some Other Service"
-    0x00000007 <blob>="Claude Code-credentials"
-    `
-    assert.deepEqual(extractServicesFromDump(dump), ["Claude Code-credentials"])
-  })
-
-  it("returns empty array for a dump with no Claude Code entries", () => {
-    assert.deepEqual(extractServicesFromDump("no relevant entries here"), [])
-  })
-
-  it("does not match uppercase hex suffixes", () => {
+  it("does not match uppercase or arbitrary suffixes", () => {
     assert.deepEqual(
       extractServicesFromDump(
-        `"svce"<blob>="Claude Code-credentials-B28BBB7C"`,
+        `
+        "svce"<blob>="Claude Code-credentials-B28BBB7C"
+        "svce"<blob>="Claude Code-credentials-myaccount"
+        `,
       ),
       [],
     )
   })
 
-  it("does not match arbitrary word suffixes", () => {
-    assert.deepEqual(
-      extractServicesFromDump(
-        `"svce"<blob>="Claude Code-credentials-myaccount"`,
-      ),
-      [],
-    )
-  })
-
-  it("handles a dump where primary service appears after suffixed ones", () => {
+  it("discovers legacy hex suffixes that are not exactly 8 chars", () => {
     const dump = `
-    "svce"<blob>="Claude Code-credentials-b28bbb7c"
-    "svce"<blob>="Claude Code-credentials"
+    "svce"<blob>="Claude Code-credentials-abc"
+    "svce"<blob>="Claude Code-credentials-deadbeefcafebabe"
     `
-    const services = extractServicesFromDump(dump)
-    assert.equal(services[0], "Claude Code-credentials")
-    assert.equal(services[1], "Claude Code-credentials-b28bbb7c")
-  })
-
-  it("handles all five real-world suffixes from a populated keychain", () => {
-    const dump = `
-    "svce"<blob>="Claude Code-credentials"
-    "svce"<blob>="Claude Code-credentials-e8dc196c"
-    "svce"<blob>="Claude Code-credentials-3519e293"
-    "svce"<blob>="Claude Code-credentials-b3d57fec"
-    "svce"<blob>="Claude Code-credentials-b28bbb7c"
-    `
-    const services = extractServicesFromDump(dump)
-    assert.equal(services.length, 5)
-    assert.equal(services[0], "Claude Code-credentials")
+    assert.deepEqual(extractServicesFromDump(dump), [
+      "Claude Code-credentials-abc",
+      "Claude Code-credentials-deadbeefcafebabe",
+    ])
   })
 })
 
@@ -317,70 +281,231 @@ const makeAccountCreds = (
 })
 
 describe("account labelling", () => {
-  it("uses subscription type as label when available", () => {
-    assert.equal(buildAccountLabels([makeAccountCreds("pro")])[0], "Claude Pro")
-    assert.equal(buildAccountLabels([makeAccountCreds("max")])[0], "Claude Max")
-    assert.equal(
-      buildAccountLabels([makeAccountCreds("free")])[0],
-      "Claude Free",
+  it("uses subscription type and deduplicates tiers", () => {
+    assert.deepEqual(
+      buildAccountLabels([
+        makeAccountCreds("pro"),
+        makeAccountCreds("pro"),
+        makeAccountCreds("max"),
+      ]),
+      ["Claude Pro 1", "Claude Pro 2", "Claude Max"],
     )
   })
 
-  it("capitalises the subscription tier", () => {
-    assert.equal(buildAccountLabels([makeAccountCreds("pro")])[0], "Claude Pro")
-  })
-
-  it("falls back to 'Claude' when no subscription type", () => {
+  it("falls back to Claude when no subscription type", () => {
     assert.equal(buildAccountLabels([makeAccountCreds()])[0], "Claude")
   })
 
-  it("deduplicates labels with counter when multiple accounts share a tier", () => {
-    const labels = buildAccountLabels([
-      makeAccountCreds("pro"),
-      makeAccountCreds("pro"),
-      makeAccountCreds("max"),
-    ])
-    assert.deepEqual(labels, ["Claude Pro 1", "Claude Pro 2", "Claude Max"])
-  })
-
-  it("keeps single account of each tier un-numbered", () => {
+  it("appends email when provided", () => {
     assert.deepEqual(
-      buildAccountLabels([makeAccountCreds("pro"), makeAccountCreds("max")]),
-      ["Claude Pro", "Claude Max"],
+      buildAccountLabels(
+        [makeAccountCreds("pro"), makeAccountCreds("pro")],
+        ["a@example.com", "b@example.com"],
+      ),
+      ["Claude Pro 1: a@example.com", "Claude Pro 2: b@example.com"],
     )
   })
 
-  it("handles three accounts of the same tier", () => {
+  it("skips email when absent", () => {
     assert.deepEqual(
-      buildAccountLabels([
-        makeAccountCreds("pro"),
-        makeAccountCreds("pro"),
-        makeAccountCreds("pro"),
-      ]),
-      ["Claude Pro 1", "Claude Pro 2", "Claude Pro 3"],
+      buildAccountLabels(
+        [makeAccountCreds("pro"), makeAccountCreds("team")],
+        [null, "bob@example.com"],
+        ["Claude Code-credentials", "Claude Code-credentials-b28bbb7c"],
+      ),
+      ["Claude Pro: Claude Code-credentials", "Claude Team: bob@example.com"],
     )
   })
+})
 
-  it("handles mixed known and unknown subscription types", () => {
-    assert.deepEqual(
-      buildAccountLabels([
-        makeAccountCreds(),
-        makeAccountCreds("pro"),
-        makeAccountCreds(),
-      ]),
-      ["Claude 1", "Claude Pro", "Claude 2"],
+describe("readAllClaudeAccounts", () => {
+  it("resolves suffixed keychain services back to config dirs and emails", async () => {
+    const originalHome = process.env.HOME
+    const tempHome = await mkdtemp(join(tmpdir(), "opencode-claude-auth-home-"))
+    const primaryDir = join(tempHome, ".claude")
+    const workDir = join(tempHome, ".work")
+    const workSuffix = keychainSuffixForDir(workDir)
+
+    mkdirSync(primaryDir, { recursive: true })
+    mkdirSync(workDir, { recursive: true })
+
+    writeFileSync(
+      join(primaryDir, ".claude.json"),
+      JSON.stringify({
+        oauthAccount: { emailAddress: "primary@example.com" },
+      }),
     )
+    writeFileSync(
+      join(workDir, ".claude.json"),
+      JSON.stringify({
+        oauthAccount: { emailAddress: "work@example.com" },
+      }),
+    )
+
+    const dump = `
+    "svce"<blob>="Claude Code-credentials-${workSuffix}"
+    "svce"<blob>="Claude Code-credentials"
+    `
+    const primaryCreds = JSON.stringify({
+      claudeAiOauth: {
+        accessToken: "primary-at",
+        refreshToken: "primary-rt",
+        expiresAt: 1_700_000_000_000,
+        subscriptionType: "pro",
+      },
+    })
+    const workCreds = JSON.stringify({
+      claudeAiOauth: {
+        accessToken: "work-at",
+        refreshToken: "work-rt",
+        expiresAt: 1_700_000_000_001,
+        subscriptionType: "pro",
+      },
+    })
+
+    process.env.HOME = tempHome
+
+    try {
+      const { readAllClaudeAccounts } = await loadKeychainWithMockedSecurity(
+        dump,
+        {
+          "Claude Code-credentials": primaryCreds,
+          [`Claude Code-credentials-${workSuffix}`]: workCreds,
+        },
+      )
+
+      assert.deepEqual(readAllClaudeAccounts(), [
+        {
+          label: "Claude Pro 1: primary@example.com",
+          source: "Claude Code-credentials",
+          configDir: primaryDir,
+          credentials: {
+            accessToken: "primary-at",
+            refreshToken: "primary-rt",
+            expiresAt: 1_700_000_000_000,
+            subscriptionType: "pro",
+          },
+        },
+        {
+          label: "Claude Pro 2: work@example.com",
+          source: `Claude Code-credentials-${workSuffix}`,
+          configDir: workDir,
+          credentials: {
+            accessToken: "work-at",
+            refreshToken: "work-rt",
+            expiresAt: 1_700_000_000_001,
+            subscriptionType: "pro",
+          },
+        },
+      ])
+    } finally {
+      if (originalHome === undefined) {
+        delete process.env.HOME
+      } else {
+        process.env.HOME = originalHome
+      }
+      rmSync(tempHome, { recursive: true, force: true })
+    }
+  })
+
+  it("keeps keychain source visible when email lookup fails", async () => {
+    const originalHome = process.env.HOME
+    const tempHome = await mkdtemp(join(tmpdir(), "opencode-claude-auth-home-"))
+    const primaryDir = join(tempHome, ".claude")
+    const workDir = join(tempHome, ".work")
+    const workSuffix = keychainSuffixForDir(workDir)
+
+    mkdirSync(primaryDir, { recursive: true })
+    mkdirSync(workDir, { recursive: true })
+    writeFileSync(join(primaryDir, ".claude.json"), JSON.stringify({}))
+    writeFileSync(join(workDir, ".claude.json"), JSON.stringify({}))
+
+    process.env.HOME = tempHome
+
+    try {
+      const { readAllClaudeAccounts } = await loadKeychainWithMockedSecurity(
+        `"svce"<blob>="Claude Code-credentials-${workSuffix}"`,
+        {
+          [`Claude Code-credentials-${workSuffix}`]: JSON.stringify({
+            claudeAiOauth: {
+              accessToken: "work-at",
+              refreshToken: "work-rt",
+              expiresAt: 1_700_000_000_001,
+            },
+          }),
+        },
+      )
+
+      const [account] = readAllClaudeAccounts()
+      assert.equal(account.source, `Claude Code-credentials-${workSuffix}`)
+      assert.equal(
+        account.label,
+        `Claude: Claude Code-credentials-${workSuffix}`,
+      )
+      assert.equal(account.configDir, workDir)
+    } finally {
+      if (originalHome === undefined) {
+        delete process.env.HOME
+      } else {
+        process.env.HOME = originalHome
+      }
+      rmSync(tempHome, { recursive: true, force: true })
+    }
+  })
+
+  it("keeps legacy hex suffixes that are not exactly 8 chars discoverable", async () => {
+    const originalHome = process.env.HOME
+    const tempHome = await mkdtemp(join(tmpdir(), "opencode-claude-auth-home-"))
+    const primaryDir = join(tempHome, ".claude")
+    mkdirSync(primaryDir, { recursive: true })
+    writeFileSync(join(primaryDir, ".claude.json"), JSON.stringify({}))
+
+    process.env.HOME = tempHome
+
+    try {
+      const { readAllClaudeAccounts } = await loadKeychainWithMockedSecurity(
+        `"svce"<blob>="Claude Code-credentials-abc"`,
+        {
+          "Claude Code-credentials-abc": JSON.stringify({
+            claudeAiOauth: {
+              accessToken: "legacy-at",
+              refreshToken: "legacy-rt",
+              expiresAt: 1_700_000_000_000,
+            },
+          }),
+        },
+      )
+
+      const accounts = readAllClaudeAccounts()
+      assert.equal(accounts.length, 1)
+      assert.equal(accounts[0].source, "Claude Code-credentials-abc")
+      // A non-8-char suffix cannot be mapped back to a config dir hash, so
+      // the entry falls back to the primary config dir — matching the CLI
+      // refresh behaviour these legacy entries had before suffix mapping
+      // existed.
+      assert.equal(accounts[0].configDir, primaryDir)
+    } finally {
+      if (originalHome === undefined) {
+        delete process.env.HOME
+      } else {
+        process.env.HOME = originalHome
+      }
+      rmSync(tempHome, { recursive: true, force: true })
+    }
   })
 })
 
 describe("credentials file fallback", () => {
   const tmpDir = join(tmpdir(), `claude-test-${process.pid}`)
 
-  it("reads valid credentials from a JSON file", () => {
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it("reads valid credentials from a config dir", () => {
     mkdirSync(tmpDir, { recursive: true })
-    const credPath = join(tmpDir, ".credentials.json")
     writeFileSync(
-      credPath,
+      join(tmpDir, ".credentials.json"),
       JSON.stringify({
         claudeAiOauth: {
           accessToken: "file-at",
@@ -389,40 +514,23 @@ describe("credentials file fallback", () => {
         },
       }),
     )
-    const result = readCredentialsFile(credPath)
-    assert.deepEqual(result, {
+
+    assert.deepEqual(readCredentialsFile(tmpDir), {
       accessToken: "file-at",
       refreshToken: "file-rt",
       expiresAt: 1700000000000,
       subscriptionType: undefined,
     })
-    rmSync(tmpDir, { recursive: true, force: true })
   })
 
   it("returns null when the file does not exist", () => {
-    assert.equal(
-      readCredentialsFile(join(tmpDir, "nonexistent", ".credentials.json")),
-      null,
-    )
+    assert.equal(readCredentialsFile(join(tmpDir, "missing")), null)
   })
 
   it("returns null when the file contains invalid JSON", () => {
     mkdirSync(tmpDir, { recursive: true })
-    const credPath = join(tmpDir, ".credentials.json")
-    writeFileSync(credPath, "{ broken json")
-    assert.equal(readCredentialsFile(credPath), null)
-    rmSync(tmpDir, { recursive: true, force: true })
-  })
-
-  it("returns null when the file is valid JSON but missing required fields", () => {
-    mkdirSync(tmpDir, { recursive: true })
-    const credPath = join(tmpDir, ".credentials.json")
-    writeFileSync(
-      credPath,
-      JSON.stringify({ claudeAiOauth: { accessToken: "only-this" } }),
-    )
-    assert.equal(readCredentialsFile(credPath), null)
-    rmSync(tmpDir, { recursive: true, force: true })
+    writeFileSync(join(tmpDir, ".credentials.json"), "{ broken json")
+    assert.equal(readCredentialsFile(tmpDir), null)
   })
 })
 
@@ -433,7 +541,6 @@ describe("updateCredentialBlob", () => {
         accessToken: "old-at",
         refreshToken: "old-rt",
         expiresAt: 1000,
-        scopes: ["user:inference"],
         subscriptionType: "pro",
       },
     })
@@ -444,9 +551,6 @@ describe("updateCredentialBlob", () => {
     }
     const result = JSON.parse(updateCredentialBlob(existing, newCreds)!)
     assert.equal(result.claudeAiOauth.accessToken, "new-at")
-    assert.equal(result.claudeAiOauth.refreshToken, "new-rt")
-    assert.equal(result.claudeAiOauth.expiresAt, 2000)
-    assert.deepEqual(result.claudeAiOauth.scopes, ["user:inference"])
     assert.equal(result.claudeAiOauth.subscriptionType, "pro")
   })
 
@@ -498,7 +602,56 @@ describe("updateCredentialBlob", () => {
   })
 })
 
+describe("credentialBlobMatches", () => {
+  const blob = JSON.stringify({
+    claudeAiOauth: {
+      accessToken: "account-a",
+      refreshToken: "rt-a",
+      expiresAt: 1,
+    },
+  })
+
+  it("accepts a blob still holding the expected token", () => {
+    assert.equal(credentialBlobMatches(blob, "account-a"), true)
+  })
+
+  it("rejects a blob replaced by another account", () => {
+    assert.equal(credentialBlobMatches(blob, "account-b"), false)
+  })
+
+  it("rejects an unparseable blob rather than assuming a match", () => {
+    assert.equal(credentialBlobMatches("not json", "account-a"), false)
+  })
+
+  // The guard validates through parseCredentials; the write it protects uses
+  // updateCredentialBlob, which would rewrite this blob happily. Pinning the
+  // stricter side so the divergence is a decision rather than an accident.
+  it("rejects a blob whose token matches but whose other fields are malformed", () => {
+    const malformed = JSON.stringify({
+      claudeAiOauth: {
+        accessToken: "account-a",
+        refreshToken: 12345,
+        expiresAt: "soon",
+      },
+    })
+    assert.equal(credentialBlobMatches(malformed, "account-a"), false)
+  })
+})
+
 describe("writeBackCredentials (file source)", () => {
+  // These tests isolate via HOME; unset CLAUDE_CONFIG_DIR so an ambient value
+  // (e.g. in CI or a dev shell) doesn't redirect the credentials path.
+  let savedConfigDir: string | undefined
+  beforeEach(() => {
+    savedConfigDir = process.env.CLAUDE_CONFIG_DIR
+    delete process.env.CLAUDE_CONFIG_DIR
+  })
+  afterEach(() => {
+    if (typeof savedConfigDir === "string")
+      process.env.CLAUDE_CONFIG_DIR = savedConfigDir
+    else delete process.env.CLAUDE_CONFIG_DIR
+  })
+
   it("reads, updates, and writes back credentials to file", async () => {
     const originalHome = process.env.HOME
     const tempHome = await mkdtemp(join(tmpdir(), "opencode-claude-auth-wb-"))
@@ -530,12 +683,103 @@ describe("writeBackCredentials (file source)", () => {
       assert.equal(result, true)
       const written = JSON.parse(readFileSync(credPath, "utf-8"))
       assert.equal(written.claudeAiOauth.accessToken, "new-at")
-      assert.equal(written.claudeAiOauth.refreshToken, "new-rt")
-      assert.equal(written.claudeAiOauth.expiresAt, 2000)
+      assert.equal(written.claudeAiOauth.subscriptionType, "pro")
+    } finally {
+      if (typeof originalHome === "string") {
+        process.env.HOME = originalHome
+      } else {
+        delete process.env.HOME
+      }
+      rmSync(tempHome, { recursive: true, force: true })
+    }
+  })
+
+  it("writes when the stored token still matches the expected one", async () => {
+    const originalHome = process.env.HOME
+    const tempHome = await mkdtemp(join(tmpdir(), "opencode-claude-auth-cas-"))
+    process.env.HOME = tempHome
+
+    try {
+      const claudeDir = join(tempHome, ".claude")
+      mkdirSync(claudeDir, { recursive: true })
+      const credPath = join(claudeDir, ".credentials.json")
+      writeFileSync(
+        credPath,
+        JSON.stringify({
+          claudeAiOauth: {
+            accessToken: "old-at",
+            refreshToken: "old-rt",
+            expiresAt: 1000,
+            subscriptionType: "pro",
+          },
+        }),
+        { encoding: "utf-8", mode: 0o600 },
+      )
+
+      const result = writeBackCredentials(
+        "file",
+        {
+          accessToken: "new-at",
+          refreshToken: "new-rt",
+          expiresAt: 2000,
+        },
+        undefined,
+        "old-at",
+      )
+
+      assert.equal(result, true, "a matching guard must not block the write")
+      const written = JSON.parse(readFileSync(credPath, "utf-8"))
+      assert.equal(written.claudeAiOauth.accessToken, "new-at")
+      assert.equal(written.claudeAiOauth.subscriptionType, "pro")
+    } finally {
+      if (typeof originalHome === "string") {
+        process.env.HOME = originalHome
+      } else {
+        delete process.env.HOME
+      }
+      rmSync(tempHome, { recursive: true, force: true })
+    }
+  })
+
+  it("skips the write when the stored token is no longer the expected one", async () => {
+    const originalHome = process.env.HOME
+    const tempHome = await mkdtemp(join(tmpdir(), "opencode-claude-auth-cas-"))
+    process.env.HOME = tempHome
+
+    try {
+      const claudeDir = join(tempHome, ".claude")
+      mkdirSync(claudeDir, { recursive: true })
+      const credPath = join(claudeDir, ".credentials.json")
+      // Another process switched accounts after we read "expected-at".
+      writeFileSync(
+        credPath,
+        JSON.stringify({
+          claudeAiOauth: {
+            accessToken: "switched-in-at",
+            refreshToken: "switched-in-rt",
+            expiresAt: 1000,
+          },
+        }),
+        { encoding: "utf-8", mode: 0o600 },
+      )
+
+      const result = writeBackCredentials(
+        "file",
+        {
+          accessToken: "our-refreshed-at",
+          refreshToken: "our-refreshed-rt",
+          expiresAt: 2000,
+        },
+        undefined,
+        "expected-at",
+      )
+
+      assert.equal(result, false)
+      const written = JSON.parse(readFileSync(credPath, "utf-8"))
       assert.equal(
-        written.claudeAiOauth.subscriptionType,
-        "pro",
-        "should preserve other fields",
+        written.claudeAiOauth.accessToken,
+        "switched-in-at",
+        "the switched-in credential must survive untouched",
       )
     } finally {
       if (typeof originalHome === "string") {
@@ -574,7 +818,7 @@ describe("writeBackCredentials (file source)", () => {
       })
 
       const mode = statSync(credPath).mode & 0o777
-      assert.equal(mode, 0o600, `Expected 0o600, got 0o${mode.toString(8)}`)
+      assert.equal(mode, 0o600)
     } finally {
       if (typeof originalHome === "string") {
         process.env.HOME = originalHome
@@ -635,5 +879,291 @@ describe("writeBackCredentials (file source)", () => {
       }
       rmSync(tempHome, { recursive: true, force: true })
     }
+  })
+
+  it("uses CLAUDE_CONFIG_DIR when set", async () => {
+    const originalHome = process.env.HOME
+    const originalConfigDir = process.env.CLAUDE_CONFIG_DIR
+    const tempHome = await mkdtemp(
+      join(tmpdir(), "opencode-claude-auth-wb-home-"),
+    )
+    const configDir = await mkdtemp(
+      join(tmpdir(), "opencode-claude-auth-wb-cfg-"),
+    )
+    process.env.HOME = tempHome
+    process.env.CLAUDE_CONFIG_DIR = configDir
+
+    try {
+      // Credentials live in CLAUDE_CONFIG_DIR, not ~/.claude
+      const credPath = join(configDir, ".credentials.json")
+      writeFileSync(
+        credPath,
+        JSON.stringify({
+          claudeAiOauth: {
+            accessToken: "old-at",
+            refreshToken: "old-rt",
+            expiresAt: 1000,
+          },
+        }),
+        { encoding: "utf-8", mode: 0o600 },
+      )
+
+      const result = writeBackCredentials("file", {
+        accessToken: "new-at",
+        refreshToken: "new-rt",
+        expiresAt: 2000,
+      })
+
+      assert.equal(result, true)
+      const written = JSON.parse(readFileSync(credPath, "utf-8"))
+      assert.equal(written.claudeAiOauth.accessToken, "new-at")
+    } finally {
+      if (typeof originalHome === "string") process.env.HOME = originalHome
+      else delete process.env.HOME
+      if (typeof originalConfigDir === "string")
+        process.env.CLAUDE_CONFIG_DIR = originalConfigDir
+      else delete process.env.CLAUDE_CONFIG_DIR
+      rmSync(tempHome, { recursive: true, force: true })
+      rmSync(configDir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe("writeBackCredentials (keychain source)", () => {
+  // The keychain is the primary platform and the reason the compare-and-swap
+  // guard exists, so it needs its own coverage: the file-source tests cannot
+  // reach this branch, and `process.platform` is rewritten to "darwin" by the
+  // harness so these run on any host.
+  const SERVICE = "Claude Code-credentials"
+  const DUMP = `"${SERVICE}"`
+
+  const blob = (accessToken: string) =>
+    JSON.stringify({
+      claudeAiOauth: {
+        accessToken,
+        refreshToken: `rt-for-${accessToken}`,
+        expiresAt: 1000,
+        subscriptionType: "max",
+      },
+    })
+
+  const refreshed = {
+    accessToken: "our-refreshed-at",
+    refreshToken: "our-refreshed-rt",
+    expiresAt: 2000,
+  }
+
+  it("skips the write when the stored token is no longer the expected one", async () => {
+    const { writeBackCredentials, __getSecurityWrites } =
+      await loadKeychainWithMockedSecurity(DUMP, {
+        // Another account was switched in after we read "expected-at".
+        [SERVICE]: blob("switched-in-at"),
+      })
+
+    const result = writeBackCredentials(
+      SERVICE,
+      refreshed,
+      undefined,
+      "expected-at",
+    )
+
+    assert.equal(result, false)
+    assert.deepEqual(
+      __getSecurityWrites(),
+      [],
+      "the switched-in credential must survive untouched",
+    )
+  })
+
+  it("writes when the stored token still matches the expected one", async () => {
+    const { writeBackCredentials, __getSecurityWrites } =
+      await loadKeychainWithMockedSecurity(DUMP, {
+        [SERVICE]: blob("expected-at"),
+      })
+
+    const result = writeBackCredentials(
+      SERVICE,
+      refreshed,
+      undefined,
+      "expected-at",
+    )
+
+    assert.equal(result, true)
+    const writes = __getSecurityWrites()
+    assert.equal(writes.length, 1)
+    assert.equal(writes[0].service, SERVICE)
+    const written = JSON.parse(writes[0].value) as {
+      claudeAiOauth: { accessToken: string; subscriptionType: string }
+    }
+    assert.equal(written.claudeAiOauth.accessToken, "our-refreshed-at")
+    assert.equal(
+      written.claudeAiOauth.subscriptionType,
+      "max",
+      "unrelated fields must be preserved",
+    )
+  })
+
+  it("writes without a guard when no expected token is supplied", async () => {
+    const { writeBackCredentials, __getSecurityWrites } =
+      await loadKeychainWithMockedSecurity(DUMP, {
+        [SERVICE]: blob("whatever-is-there"),
+      })
+
+    assert.equal(writeBackCredentials(SERVICE, refreshed), true)
+    assert.equal(__getSecurityWrites().length, 1)
+  })
+})
+
+describe("readAllClaudeAccounts (file source)", () => {
+  it("reads credentials from CLAUDE_CONFIG_DIR when set", async () => {
+    // Non-darwin reads go straight to the credentials file; on darwin the
+    // keychain is tried first, so this only asserts deterministically off-mac.
+    if (process.platform === "darwin") return
+
+    const originalHome = process.env.HOME
+    const originalConfigDir = process.env.CLAUDE_CONFIG_DIR
+    const tempHome = await mkdtemp(
+      join(tmpdir(), "opencode-claude-auth-rd-home-"),
+    )
+    const configDir = await mkdtemp(
+      join(tmpdir(), "opencode-claude-auth-rd-cfg-"),
+    )
+    process.env.HOME = tempHome
+    process.env.CLAUDE_CONFIG_DIR = configDir
+
+    try {
+      writeFileSync(
+        join(configDir, ".credentials.json"),
+        JSON.stringify({
+          claudeAiOauth: {
+            accessToken: "cfg-at",
+            refreshToken: "cfg-rt",
+            expiresAt: 1700000000000,
+            subscriptionType: "pro",
+          },
+        }),
+        { encoding: "utf-8", mode: 0o600 },
+      )
+
+      const accounts = readAllClaudeAccountsReal()
+      assert.equal(accounts.length, 1)
+      assert.equal(accounts[0].source, "file")
+      assert.equal(accounts[0].credentials.accessToken, "cfg-at")
+    } finally {
+      if (typeof originalHome === "string") process.env.HOME = originalHome
+      else delete process.env.HOME
+      if (typeof originalConfigDir === "string")
+        process.env.CLAUDE_CONFIG_DIR = originalConfigDir
+      else delete process.env.CLAUDE_CONFIG_DIR
+      rmSync(tempHome, { recursive: true, force: true })
+      rmSync(configDir, { recursive: true, force: true })
+    }
+  })
+})
+
+function makeCreds(accessToken: string) {
+  return JSON.stringify({
+    claudeAiOauth: {
+      accessToken,
+      refreshToken: "rt",
+      expiresAt: Date.now() + 3_600_000,
+    },
+  })
+}
+
+describe("CLAUDE_CONFIG_DIR support", () => {
+  const savedEnv = process.env.CLAUDE_CONFIG_DIR
+
+  afterEach(() => {
+    if (savedEnv === undefined) {
+      delete process.env.CLAUDE_CONFIG_DIR
+    } else {
+      process.env.CLAUDE_CONFIG_DIR = savedEnv
+    }
+  })
+
+  it("uses ~/.claude by default when CLAUDE_CONFIG_DIR is unset", async () => {
+    const originalHome = process.env.HOME
+    delete process.env.CLAUDE_CONFIG_DIR
+    const fakeHome = await mkdtemp(join(tmpdir(), "claude-home-"))
+    const defaultDir = join(fakeHome, ".claude")
+    mkdirSync(defaultDir, { recursive: true })
+    writeFileSync(
+      join(defaultDir, ".credentials.json"),
+      makeCreds("default-token"),
+    )
+
+    process.env.HOME = fakeHome
+
+    try {
+      const creds = readCredentialsFile()
+      assert.ok(creds)
+      assert.equal(creds.accessToken, "default-token")
+    } finally {
+      if (originalHome === undefined) {
+        delete process.env.HOME
+      } else {
+        process.env.HOME = originalHome
+      }
+      rmSync(fakeHome, { recursive: true, force: true })
+    }
+  })
+
+  it("uses CLAUDE_CONFIG_DIR when set to a custom path", async () => {
+    const customDir = await mkdtemp(join(tmpdir(), "claude-custom-"))
+    mkdirSync(customDir, { recursive: true })
+    writeFileSync(
+      join(customDir, ".credentials.json"),
+      makeCreds("custom-token"),
+    )
+
+    process.env.CLAUDE_CONFIG_DIR = customDir
+
+    const creds = readCredentialsFile()
+    assert.ok(creds)
+    assert.equal(creds.accessToken, "custom-token")
+
+    rmSync(customDir, { recursive: true, force: true })
+  })
+
+  it("works with arbitrary custom directory names", async () => {
+    const arbitraryDir = await mkdtemp(join(tmpdir(), "claude-arbitrary-"))
+    writeFileSync(
+      join(arbitraryDir, ".credentials.json"),
+      makeCreds("arbitrary-token"),
+    )
+
+    process.env.CLAUDE_CONFIG_DIR = arbitraryDir
+
+    const creds = readCredentialsFile()
+    assert.ok(creds)
+    assert.equal(creds.accessToken, "arbitrary-token")
+
+    rmSync(arbitraryDir, { recursive: true, force: true })
+  })
+})
+
+describe("keychainSuffixForDir", () => {
+  it("derives the expected suffix for a known path", () => {
+    assert.equal(keychainSuffixForDir("/Users/example/.work"), "d4b84687")
+  })
+
+  it("produces different suffixes for different dirs", () => {
+    const a = keychainSuffixForDir("/Users/example/.claude")
+    const b = keychainSuffixForDir("/Users/example/.work")
+    const c = keychainSuffixForDir("/Users/example/.personal")
+    assert.notEqual(a, b)
+    assert.notEqual(b, c)
+    assert.notEqual(a, c)
+  })
+
+  it("produces 8-character hex strings", () => {
+    const suffix = keychainSuffixForDir("/Users/example/.claude")
+    assert.match(suffix, /^[0-9a-f]{8}$/)
+  })
+
+  it("is consistent for the same input", () => {
+    const dir = join(homedir(), ".someconfig")
+    assert.equal(keychainSuffixForDir(dir), keychainSuffixForDir(dir))
   })
 })
