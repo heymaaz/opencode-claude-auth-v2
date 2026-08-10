@@ -3,15 +3,15 @@ import {
   Integration,
   Plugin,
   Provider,
-} from "@opencode-ai/plugin/v2/effect"
-import type { IntegrationOAuthMethodRegistration } from "@opencode-ai/plugin/v2/effect/integration"
+} from "@opencode-ai/plugin/effect"
+import type { IntegrationOAuthMethodRegistration } from "@opencode-ai/plugin/effect/integration"
 import { Effect } from "effect"
 import {
   getCachedCredentials,
   initAccounts,
   loadPersistedAccountSource,
   refreshAccountsList,
-  refreshViaOAuthAsync,
+  refreshViaOAuth,
   saveAccountSource,
   setActiveAccountSource,
 } from "./credentials.ts"
@@ -25,13 +25,37 @@ export * from "./signing.ts"
 export * from "./transforms.ts"
 
 const PROVIDER_ID = Provider.ID.make("claude-subscription")
-const INTEGRATION_ID = Integration.ID.make("claude-subscription")
+const INTEGRATION_ID = Integration.ID.make("anthropic")
 const METHOD_ID = Integration.MethodID.make("claude-code")
 const SYSTEM_IDENTITY =
   "You are Claude Code, Anthropic's official CLI for Claude."
 const PROVIDER_PACKAGE = `aisdk:${new URL("./provider.js", import.meta.url).href}`
 
-function credential(source: string) {
+interface ModelsDevModel {
+  id: string
+  name: string
+  family?: string
+  tool_call?: boolean
+  release_date?: string
+  status?: "alpha" | "beta" | "deprecated" | "active"
+  modalities?: { input?: string[]; output?: string[] }
+  limit: { context: number; input?: number; output: number }
+  reasoning_options?: Array<{ type: string; values?: string[] }>
+}
+
+async function loadAnthropicModels() {
+  const response = await fetch("https://models.dev/api.json", {
+    signal: AbortSignal.timeout(10_000),
+  })
+  if (!response.ok)
+    throw new Error(`models.dev returned HTTP ${response.status}`)
+  const data = (await response.json()) as {
+    anthropic?: { models?: Record<string, ModelsDevModel> }
+  }
+  return Object.values(data.anthropic?.models ?? {})
+}
+
+async function credential(source: string) {
   const accounts = refreshAccountsList()
   const account = accounts.find((item) => item.source === source) ?? accounts[0]
   if (!account)
@@ -40,7 +64,7 @@ function credential(source: string) {
     )
   setActiveAccountSource(account.source)
   saveAccountSource(account.source)
-  const value = getCachedCredentials() ?? account.credentials
+  const value = (await getCachedCredentials()) ?? account.credentials
   return Credential.OAuth.make({
     type: "oauth",
     methodID: METHOD_ID,
@@ -50,6 +74,7 @@ function credential(source: string) {
     metadata: {
       source: account.source,
       label: account.label,
+      ...(account.configDir ? { configDir: account.configDir } : {}),
       ...(value.subscriptionType
         ? { subscriptionType: value.subscriptionType }
         : {}),
@@ -82,29 +107,32 @@ function oauth(accounts: ReturnType<typeof readAllClaudeAccounts>) {
           }),
     },
     authorize: (inputs) =>
-      Effect.try(() => {
-        const latest = refreshAccountsList()
-        const source =
-          inputs.account ??
-          loadPersistedAccountSource() ??
-          latest[0]?.source ??
-          accounts[0]?.source
-        if (!source)
-          throw new Error(
-            "No Claude Code credentials found. Run `claude` to authenticate first.",
-          )
-        const value = credential(source)
-        return {
-          mode: "auto" as const,
-          url: "",
-          instructions: "Claude Code credentials imported from this device.",
-          callback: Effect.succeed(value),
-        }
+      Effect.tryPromise({
+        try: async () => {
+          const latest = refreshAccountsList()
+          const source =
+            (typeof inputs.account === "string" ? inputs.account : undefined) ??
+            loadPersistedAccountSource() ??
+            latest[0]?.source ??
+            accounts[0]?.source
+          if (!source)
+            throw new Error(
+              "No Claude Code credentials found. Run `claude` to authenticate first.",
+            )
+          const value = await credential(source)
+          return {
+            mode: "auto" as const,
+            url: "",
+            instructions: "Claude Code credentials imported from this device.",
+            callback: Effect.succeed(value),
+          }
+        },
+        catch: (cause) => cause,
       }),
     refresh: (value) =>
       Effect.tryPromise({
         try: async () => {
-          const refreshed = await refreshViaOAuthAsync(value.refresh)
+          const refreshed = await refreshViaOAuth(value.refresh)
           if (!refreshed)
             throw new Error(
               "Claude OAuth refresh failed. Run `claude` to re-authenticate.",
@@ -113,7 +141,12 @@ function oauth(accounts: ReturnType<typeof readAllClaudeAccounts>) {
             typeof value.metadata?.source === "string"
               ? value.metadata.source
               : undefined
-          if (source) writeBackCredentials(source, refreshed)
+          const configDir =
+            typeof value.metadata?.configDir === "string"
+              ? value.metadata.configDir
+              : undefined
+          if (source)
+            writeBackCredentials(source, refreshed, configDir, value.access)
           return Credential.OAuth.make({
             ...value,
             methodID: METHOD_ID,
@@ -152,26 +185,61 @@ export const ClaudeAuthPlugin = Plugin.define({
 
     yield* ctx.integration.transform((draft) => {
       draft.update(INTEGRATION_ID, (integration) => {
-        integration.name = "Claude Subscription"
+        integration.name = "Anthropic"
       })
       draft.method.update(oauth(accounts))
     })
 
+    const models = yield* Effect.tryPromise({
+      try: loadAnthropicModels,
+      catch: (cause) => cause,
+    }).pipe(
+      Effect.catch((cause) =>
+        Effect.sync(() => {
+          log("models_dev_error", { cause: String(cause) })
+          return []
+        }),
+      ),
+    )
     yield* ctx.catalog.transform((catalog) => {
-      const anthropic = catalog.provider.get("anthropic")
-      if (!anthropic) return
       catalog.provider.update(PROVIDER_ID, (provider) => {
         provider.name = "Claude Subscription"
         provider.integrationID = INTEGRATION_ID
         provider.package = PROVIDER_PACKAGE
-        provider.settings = { ...anthropic.provider.settings }
       })
-      for (const [id, source] of anthropic.models) {
-        catalog.model.update(PROVIDER_ID, id, (model) => {
-          Object.assign(model, structuredClone(source), {
+      for (const source of models) {
+        catalog.model.update(PROVIDER_ID, source.id, (model) => {
+          Object.assign(model, {
+            id: source.id,
+            modelID: source.id,
             providerID: PROVIDER_ID,
+            family: source.family,
+            name: source.name,
             package: PROVIDER_PACKAGE,
+            capabilities: {
+              tools: source.tool_call ?? true,
+              input: source.modalities?.input ?? ["text"],
+              output: source.modalities?.output ?? ["text"],
+            },
+            variants:
+              source.reasoning_options
+                ?.flatMap((option) => option.values ?? [])
+                .map((effort) => ({
+                  id: effort,
+                  settings: {
+                    thinking: { type: "adaptive", display: "summarized" },
+                    effort,
+                  },
+                })) ?? [],
+            time: {
+              released: source.release_date
+                ? Date.parse(`${source.release_date}T00:00:00Z`)
+                : 0,
+            },
             cost: [],
+            status: source.status ?? "active",
+            enabled: source.status !== "deprecated",
+            limit: source.limit,
           })
         })
       }

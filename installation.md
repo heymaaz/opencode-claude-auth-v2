@@ -72,9 +72,9 @@ The changes are both required: OpenCode 2 uses `plugins` instead of `plugin`, an
 OpenCode 1.
 
 The old plugin connection is not reused by the OpenCode 2 integration. Run `claude auth login` if Claude Code is not already
-signed in, restart OpenCode 2, then run `/connect` and choose **Claude Subscription > Import Claude Code subscription**.
-Existing Claude Code credentials in the macOS Keychain or `~/.claude/.credentials.json` can be imported without another
-browser login.
+signed in, restart OpenCode 2, then run `/connect` and choose **Anthropic > Import Claude Code subscription**. Existing
+Claude Code credentials in the macOS Keychain, `~/.claude/.credentials.json`, or `$CLAUDE_CONFIG_DIR/.credentials.json` can
+be imported without another browser login.
 
 Change explicit model references from `anthropic/<model>` to `claude-subscription/<model>`. Use `/models` to select a model
 under **Claude Subscription**.

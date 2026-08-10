@@ -12,11 +12,11 @@ importers:
         specifier: 3.0.82
         version: 3.0.82(zod@4.1.8)
       '@opencode-ai/plugin':
-        specifier: 0.0.0-next-15788
-        version: 0.0.0-next-15788
+        specifier: 0.0.0-next-17114
+        version: 0.0.0-next-17114
       effect:
-        specifier: 4.0.0-beta.98
-        version: 4.0.0-beta.98
+        specifier: 4.0.0-beta.101
+        version: 4.0.0-beta.101
     devDependencies:
       '@types/node':
         specifier: ^25.5.0
@@ -98,39 +98,45 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@opencode-ai/ai@0.0.0-next-15788':
-    resolution: {integrity: sha512-9mA+9Ya61lq/JJYgBvhrFI5DhD1EBENZLd2EAr9NziENC6Izi9IQZ6ineQNrDw1MfSIzUblWexXHrCPxWg4YIg==}
+  '@opencode-ai/ai@0.0.0-next-17114':
+    resolution: {integrity: sha512-m7diJ1BfiPj1258rV3FbfwhG6wWeAsFWWMW1ISdv3d3+1kPtvSPI6zAoZjf6/Xm3idDxeDJgfR9pT1rld73qEw==}
 
-  '@opencode-ai/client@0.0.0-next-15788':
-    resolution: {integrity: sha512-aiTmtIwPCWCktzoiSISNkrPWUNOGLtM5LpbWfT+fmqVSDjNqWG8jhdXwz6kI3Oi2dSWs2uS/ZqOW627/Tk3ueQ==}
+  '@opencode-ai/client@0.0.0-next-17114':
+    resolution: {integrity: sha512-yfcmoC5iWQ5gULEYY9eCuOgwdSI8gUUokcvrsDEEvjriQ2mOoZ1ZoxJkjQrPx24KGumQu8a3HizMuV5gfL7g4A==}
     peerDependencies:
-      effect: 4.0.0-beta.98
+      effect: 4.0.0-beta.101
     peerDependenciesMeta:
       effect:
         optional: true
 
-  '@opencode-ai/plugin@0.0.0-next-15788':
-    resolution: {integrity: sha512-A0k1at+IQrpQzqifx883lSRuK/Fox06zOunXjAZMRsemGGyly9xSGITwDzInY52rLTC9iP06YJQCPDnThG3ytA==}
+  '@opencode-ai/plugin@0.0.0-next-17114':
+    resolution: {integrity: sha512-uZDMFG2givv9C1RRzGiGFe66u9MNneCiYm/RwazDG6oXWd1iWWCD+j3LEsdwST0oAQxG7L4HNTOdVWMMaUKSIw==}
     peerDependencies:
+      '@opencode-ai/theme': 0.0.0-next-17114
       '@opentui/core': '>=0.4.5'
       '@opentui/keymap': '>=0.4.5'
       '@opentui/solid': '>=0.4.5'
+      solid-js: '>=1.9.0'
     peerDependenciesMeta:
+      '@opencode-ai/theme':
+        optional: true
       '@opentui/core':
         optional: true
       '@opentui/keymap':
         optional: true
       '@opentui/solid':
         optional: true
+      solid-js:
+        optional: true
 
-  '@opencode-ai/protocol@0.0.0-next-15788':
-    resolution: {integrity: sha512-8lcd0urEq+Kfxh1sOqpz6NxZuJc/K56TKsdoImxiE3i5JCzsFqCPFS48d/oDK+xc5rtSFxdo89SpOOS6/qhZHw==}
+  '@opencode-ai/protocol@0.0.0-next-17114':
+    resolution: {integrity: sha512-nvUTLve13ESBRCmxCfr49pBsiiCzra0K5RPDGs3GWfJ7o2dNp5rGVQfJs4jppnS9hmzoNy4OJoZVjjmELSu5vg==}
 
-  '@opencode-ai/schema@0.0.0-next-15788':
-    resolution: {integrity: sha512-kaMt8PH3R0UxwiEjBQ82I278Qc3DM4UE1+G0NNZbloG1GQyQEV8PgWotAkelc38j8NrpIYCBMW7XZCbn1u9moQ==}
+  '@opencode-ai/schema@0.0.0-next-17114':
+    resolution: {integrity: sha512-27LFvPbtpRo3FGa5jkcK5CQiWFkTj8zr76i18qxURBG8CxxykCteCKWNU8kz22NB9vvPH4PeZOjGwDZfWnwDQQ==}
 
-  '@opencode-ai/sdk@0.0.0-next-15788':
-    resolution: {integrity: sha512-ynEu/cZvtrVImAaKQ43Ss2oe8GzY7ypcYgw1/X75H9bbjfwjryOfRCgrFku4lUJVhUua3YGghgHDXcSyIkiLrA==}
+  '@opencode-ai/sdk@1.18.5':
+    resolution: {integrity: sha512-7KgMvP5/1oxbhHj6kYBtPSTEdFKYpUeEYOzBTKdzSaRpapUpFFdn6Hkus3rr0rljO0kukWZIgRd3DrVBwTULGA==}
 
   '@oxfmt/binding-android-arm-eabi@0.41.0':
     resolution: {integrity: sha512-REfrqeMKGkfMP+m/ScX4f5jJBSmVNYcpoDF8vP8f8eYPDuPGZmzp56NIUsYmx3h7f6NzC6cE3gqh8GDWrJHCKw==}
@@ -494,8 +500,8 @@ packages:
   ecdsa-sig-formatter@1.0.11:
     resolution: {integrity: sha512-nagl3RYrbNv6kQkeJIpt6NJZy8twLB/2vtz6yN9Z4vRKHN4/QZJIEbqohALSgwKdnksuY3k5Addp5lg8sVoVcQ==}
 
-  effect@4.0.0-beta.98:
-    resolution: {integrity: sha512-oz+bsG5h+6RNrw4t5GMfQrk/xBS8ROoqkYsuvRhBr5O7mCOrpvH/hbw+QrDzvKIpX4HJClwm86F94c87W0sJxg==}
+  effect@4.0.0-beta.101:
+    resolution: {integrity: sha512-HjowumlIo+orthn4jMlEJPuzIYPBV+uq/XiciHWhiedLsXQpWHdNJHO5d59BVDP5s1LPuvERcktwFqRXnJqnhA==}
 
   emoji-regex@8.0.0:
     resolution: {integrity: sha512-MSjYzcWNOA0ewAHpz0MxpYFvwg6yjy1NG3xteoqz644VCo/RPgnr1/GGt+ic3iJTzQ8Eu3TdM14SawnVUmGE6A==}
@@ -811,47 +817,48 @@ snapshots:
   '@msgpackr-extract/msgpackr-extract-win32-x64@3.0.4':
     optional: true
 
-  '@opencode-ai/ai@0.0.0-next-15788':
+  '@opencode-ai/ai@0.0.0-next-17114':
     dependencies:
-      '@opencode-ai/schema': 0.0.0-next-15788
+      '@opencode-ai/schema': 0.0.0-next-17114
       '@smithy/eventstream-codec': 4.2.14
       '@smithy/util-utf8': 4.2.2
       aws4fetch: 1.0.20
-      effect: 4.0.0-beta.98
+      effect: 4.0.0-beta.101
       google-auth-library: 10.5.0
     transitivePeerDependencies:
       - supports-color
 
-  '@opencode-ai/client@0.0.0-next-15788(effect@4.0.0-beta.98)':
+  '@opencode-ai/client@0.0.0-next-17114(effect@4.0.0-beta.101)':
     dependencies:
-      '@opencode-ai/protocol': 0.0.0-next-15788
-      '@opencode-ai/schema': 0.0.0-next-15788
+      '@opencode-ai/protocol': 0.0.0-next-17114
+      '@opencode-ai/schema': 0.0.0-next-17114
     optionalDependencies:
-      effect: 4.0.0-beta.98
+      effect: 4.0.0-beta.101
 
-  '@opencode-ai/plugin@0.0.0-next-15788':
+  '@opencode-ai/plugin@0.0.0-next-17114':
     dependencies:
       '@ai-sdk/provider': 3.0.8
-      '@opencode-ai/ai': 0.0.0-next-15788
-      '@opencode-ai/client': 0.0.0-next-15788(effect@4.0.0-beta.98)
-      '@opencode-ai/schema': 0.0.0-next-15788
-      '@opencode-ai/sdk': 0.0.0-next-15788
+      '@opencode-ai/ai': 0.0.0-next-17114
+      '@opencode-ai/client': 0.0.0-next-17114(effect@4.0.0-beta.101)
+      '@opencode-ai/schema': 0.0.0-next-17114
+      '@opencode-ai/sdk': 1.18.5
       '@standard-schema/spec': 1.1.0
-      effect: 4.0.0-beta.98
+      effect: 4.0.0-beta.101
       zod: 4.1.8
     transitivePeerDependencies:
       - supports-color
 
-  '@opencode-ai/protocol@0.0.0-next-15788':
+  '@opencode-ai/protocol@0.0.0-next-17114':
     dependencies:
-      '@opencode-ai/schema': 0.0.0-next-15788
-      effect: 4.0.0-beta.98
+      '@opencode-ai/schema': 0.0.0-next-17114
+      effect: 4.0.0-beta.101
 
-  '@opencode-ai/schema@0.0.0-next-15788':
+  '@opencode-ai/schema@0.0.0-next-17114':
     dependencies:
-      effect: 4.0.0-beta.98
+      '@standard-schema/spec': 1.1.0
+      effect: 4.0.0-beta.101
 
-  '@opencode-ai/sdk@0.0.0-next-15788':
+  '@opencode-ai/sdk@1.18.5':
     dependencies:
       cross-spawn: 7.0.6
 
@@ -1076,7 +1083,7 @@ snapshots:
     dependencies:
       safe-buffer: 5.2.1
 
-  effect@4.0.0-beta.98:
+  effect@4.0.0-beta.101:
     dependencies:
       '@standard-schema/spec': 1.1.0
       fast-check: 4.9.0

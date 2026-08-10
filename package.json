@@ -50,8 +50,9 @@
     }
   },
   "scripts": {
-    "build": "tsc && cp src/anthropic-prompt.txt dist/",
-    "test": "node --test --experimental-strip-types src/**/*.test.ts",
+    "build": "rm -rf dist && tsc && cp src/anthropic-prompt.txt dist/",
+    "test": "node --test --experimental-strip-types src/**/*.test.ts scripts/**/*.test.ts",
+    "test:headless": "pnpm run build && node --experimental-strip-types scripts/test-headless.ts",
     "test:models": "pnpm run build && node scripts/test-models.ts",
     "intercept": "pnpm run build && node --experimental-strip-types scripts/intercept-claude.ts",
     "intercept:all": "pnpm run build && node --experimental-strip-types scripts/intercept-claude.ts --all",
@@ -64,8 +65,8 @@
   },
   "dependencies": {
     "@ai-sdk/anthropic": "3.0.82",
-    "@opencode-ai/plugin": "0.0.0-next-15788",
-    "effect": "4.0.0-beta.98"
+    "@opencode-ai/plugin": "0.0.0-next-17114",
+    "effect": "4.0.0-beta.101"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",

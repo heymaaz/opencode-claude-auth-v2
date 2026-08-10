@@ -7,16 +7,16 @@ This is an OpenCode 2-only fork of
 OpenCode 1.
 
 > OpenCode 2 and its plugin API are in beta. This package currently targets
-> `@opencode-ai/cli@0.0.0-next-15788` and may require updates with later beta builds.
+> `@opencode-ai/cli@0.0.0-next-17114` and may require updates with later beta builds.
 
 ## How It Works
 
 The plugin:
 
 - discovers Claude Code credentials in the macOS Keychain or `~/.claude/.credentials.json`;
-- registers a native OpenCode 2 OAuth Integration;
+- adds a Claude Code OAuth method to OpenCode 2's Anthropic integration;
 - creates a separate **Claude Subscription** provider so normal Anthropic API-key configuration remains untouched;
-- copies the current Anthropic model catalog into that provider;
+- populates that provider from the current Anthropic catalog on models.dev;
 - routes requests through the AI SDK Anthropic provider with Claude subscription bearer authentication;
 - preserves OpenCode's own tools and permission loop;
 - refreshes expiring OAuth credentials and writes rotated tokens back to their original source;
@@ -84,7 +84,7 @@ When upgrading to OpenCode 2, replace it with the plural `plugins` field and thi
 ```
 
 The OpenCode 1 plugin and its saved connection are not used by the OpenCode 2 integration. Ensure Claude Code is signed in
-with `claude auth login`, restart OpenCode 2, then run `/connect` and choose **Claude Subscription > Import Claude Code
+with `claude auth login`, restart OpenCode 2, then run `/connect` and choose **Anthropic > Import Claude Code
 subscription**. If Claude Code is already signed in on the device, the existing Keychain or credentials-file entry can be
 imported without another browser login.
 
@@ -131,7 +131,7 @@ Start OpenCode 2 and select a model from the **Claude Subscription** provider:
 opencode2
 ```
 
-Run `/connect` once and choose **Claude Subscription > Import Claude Code subscription**. You can repeat that flow to
+Run `/connect` once and choose **Anthropic > Import Claude Code subscription**. You can repeat that flow to
 replace the stored connection or switch Claude Code accounts.
 
 ## Why Not `ai-sdk-provider-claude-code`?
@@ -143,7 +143,7 @@ uses `@ai-sdk/anthropic` with a custom transport instead.
 ## Credential Sources
 
 1. macOS Keychain entries named `Claude Code-credentials*`
-2. `~/.claude/.credentials.json`
+2. `~/.claude/.credentials.json`, or `$CLAUDE_CONFIG_DIR/.credentials.json` when configured
 
 Multiple macOS accounts appear as choices in the OpenCode 2 connection flow. The selected source is persisted locally.
 
