@@ -156,6 +156,8 @@ pnpm test
 pnpm lint
 ```
 
+See [RELEASING.md](./RELEASING.md) for the beta release and npm publishing process.
+
 Diagnostic logging can be enabled with `CLAUDE_AUTH_DEBUG=1` or set to a file path:
 
 ```bash
