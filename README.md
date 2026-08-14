@@ -7,7 +7,7 @@ This is an OpenCode 2-only fork of
 OpenCode 1.
 
 > OpenCode 2 and its plugin API are in beta. This package currently targets
-> `@opencode-ai/cli@0.0.0-next-17114` and may require updates with later beta builds.
+> `@opencode-ai/cli@0.0.0-next-17444` and may require updates with later beta builds.
 
 ## How It Works
 
