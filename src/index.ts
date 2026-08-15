@@ -24,36 +24,12 @@ export * from "./provider.ts"
 export * from "./signing.ts"
 export * from "./transforms.ts"
 
-const PROVIDER_ID = Provider.ID.make("claude-subscription")
+const PROVIDER_ID = Provider.ID.make("anthropic")
 const INTEGRATION_ID = Integration.ID.make("anthropic")
 const METHOD_ID = Integration.MethodID.make("claude-code")
 const SYSTEM_IDENTITY =
   "You are Claude Code, Anthropic's official CLI for Claude."
 const PROVIDER_PACKAGE = `aisdk:${new URL("./provider.js", import.meta.url).href}`
-
-interface ModelsDevModel {
-  id: string
-  name: string
-  family?: string
-  tool_call?: boolean
-  release_date?: string
-  status?: "alpha" | "beta" | "deprecated" | "active"
-  modalities?: { input?: string[]; output?: string[] }
-  limit: { context: number; input?: number; output: number }
-  reasoning_options?: Array<{ type: string; values?: string[] }>
-}
-
-async function loadAnthropicModels() {
-  const response = await fetch("https://models.dev/api.json", {
-    signal: AbortSignal.timeout(10_000),
-  })
-  if (!response.ok)
-    throw new Error(`models.dev returned HTTP ${response.status}`)
-  const data = (await response.json()) as {
-    anthropic?: { models?: Record<string, ModelsDevModel> }
-  }
-  return Object.values(data.anthropic?.models ?? {})
-}
 
 async function credential(source: string) {
   const accounts = refreshAccountsList()
@@ -190,57 +166,18 @@ export const ClaudeAuthPlugin = Plugin.define({
       draft.method.update(oauth(accounts))
     })
 
-    const models = yield* Effect.tryPromise({
-      try: loadAnthropicModels,
-      catch: (cause) => cause,
-    }).pipe(
-      Effect.catch((cause) =>
-        Effect.sync(() => {
-          log("models_dev_error", { cause: String(cause) })
-          return []
-        }),
-      ),
-    )
     yield* ctx.catalog.transform((catalog) => {
+      const anthropic = catalog.provider.get(PROVIDER_ID)
+      if (!anthropic) return
       catalog.provider.update(PROVIDER_ID, (provider) => {
-        provider.name = "Claude Subscription"
+        provider.name = "Anthropic"
         provider.integrationID = INTEGRATION_ID
         provider.package = PROVIDER_PACKAGE
       })
-      for (const source of models) {
-        catalog.model.update(PROVIDER_ID, source.id, (model) => {
-          Object.assign(model, {
-            id: source.id,
-            modelID: source.id,
-            providerID: PROVIDER_ID,
-            family: source.family,
-            name: source.name,
-            package: PROVIDER_PACKAGE,
-            capabilities: {
-              tools: source.tool_call ?? true,
-              input: source.modalities?.input ?? ["text"],
-              output: source.modalities?.output ?? ["text"],
-            },
-            variants:
-              source.reasoning_options
-                ?.flatMap((option) => option.values ?? [])
-                .map((effort) => ({
-                  id: effort,
-                  settings: {
-                    thinking: { type: "adaptive", display: "summarized" },
-                    effort,
-                  },
-                })) ?? [],
-            time: {
-              released: source.release_date
-                ? Date.parse(`${source.release_date}T00:00:00Z`)
-                : 0,
-            },
-            cost: [],
-            status: source.status ?? "active",
-            enabled: source.status !== "deprecated",
-            limit: source.limit,
-          })
+      for (const [modelID] of anthropic.models) {
+        catalog.model.update(PROVIDER_ID, modelID, (model) => {
+          model.package = PROVIDER_PACKAGE
+          model.cost = []
         })
       }
     })

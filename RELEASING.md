@@ -35,6 +35,7 @@ git commit -m "chore: release $VERSION"
 git push origin main
 npm whoami
 pnpm publish --access public --tag latest
+npm dist-tag add "opencode-claude-auth-v2@$VERSION" beta
 ```
 
 If `npm whoami` returns `401 Unauthorized`, authenticate before publishing:
@@ -54,4 +55,4 @@ npm view opencode-claude-auth-v2 version
 npm view opencode-claude-auth-v2 dist-tags --json
 ```
 
-Confirm that both the published version and the `latest` tag match the version in `package.json`.
+Confirm that the published version and both the `latest` and `beta` tags match the version in `package.json`.

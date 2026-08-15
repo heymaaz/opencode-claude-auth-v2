@@ -40,7 +40,7 @@ import { fileURLToPath } from "node:url"
 import { keychainSuffixForDir } from "../dist/keychain.js"
 
 const PRIMARY_SERVICE = "Claude Code-credentials"
-const MODEL = "claude-subscription/claude-haiku-4-5"
+const MODEL = "anthropic/claude-haiku-4-5"
 const SENTINEL = "HEADLESSOK"
 const PROMPT = `Reply with exactly the word: ${SENTINEL}`
 const RUN_TIMEOUT_MS = 180_000

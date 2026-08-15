@@ -15,15 +15,15 @@ The plugin:
 
 - discovers Claude Code credentials in the macOS Keychain or `~/.claude/.credentials.json`;
 - adds a Claude Code OAuth method to OpenCode 2's Anthropic integration;
-- creates a separate **Claude Subscription** provider so normal Anthropic API-key configuration remains untouched;
-- populates that provider from the current Anthropic catalog on models.dev;
+- routes OpenCode's built-in **Anthropic** provider through the Claude subscription transport;
 - routes requests through the AI SDK Anthropic provider with Claude subscription bearer authentication;
 - preserves OpenCode's own tools and permission loop;
 - refreshes expiring OAuth credentials and writes rotated tokens back to their original source;
 - applies the request, billing, beta-header, tool-name, and streaming transformations inherited from the original plugin.
 
-The separate provider is intentional. OpenCode 2's native Anthropic route currently sends every resolved credential as an
-`x-api-key`; Claude subscription OAuth requires bearer authentication and additional request transformations.
+Installing this plugin opts the Anthropic provider into Claude subscription use. Models keep their normal
+`anthropic/<model>` IDs; the plugin replaces the request transport because Claude subscription OAuth requires bearer
+authentication and additional request transformations.
 
 ## Requirements
 
@@ -88,8 +88,10 @@ with `claude auth login`, restart OpenCode 2, then run `/connect` and choose **A
 subscription**. If Claude Code is already signed in on the device, the existing Keychain or credentials-file entry can be
 imported without another browser login.
 
-Update explicit model references from `anthropic/<model>` to `claude-subscription/<model>`, then use `/models` to select a
-model under **Claude Subscription**.
+Existing `anthropic/<model>` references continue to work. Use `/models` to select a model under **Anthropic**.
+
+If you used `0.1.0-beta.3` or earlier, replace explicit `claude-subscription/<model>` references with
+`anthropic/<model>` and reselect the model in existing OpenCode 2 sessions.
 
 ## Running OpenCode 1 and 2 Side by Side
 
@@ -125,7 +127,7 @@ entries in the separate global configurations when using both versions side by s
 
 ## Use
 
-Start OpenCode 2 and select a model from the **Claude Subscription** provider:
+Start OpenCode 2 and select a model from the **Anthropic** provider:
 
 ```bash
 opencode2

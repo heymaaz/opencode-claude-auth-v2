@@ -76,8 +76,10 @@ signed in, restart OpenCode 2, then run `/connect` and choose **Anthropic > Impo
 Claude Code credentials in the macOS Keychain, `~/.claude/.credentials.json`, or `$CLAUDE_CONFIG_DIR/.credentials.json` can
 be imported without another browser login.
 
-Change explicit model references from `anthropic/<model>` to `claude-subscription/<model>`. Use `/models` to select a model
-under **Claude Subscription**.
+Existing `anthropic/<model>` references continue to work. Use `/models` to select a model under **Anthropic**.
+
+If upgrading from `0.1.0-beta.3` or earlier, replace explicit `claude-subscription/<model>` references with
+`anthropic/<model>` and reselect the model in existing OpenCode 2 sessions.
 
 ## Running OpenCode 1 and 2 Side by Side
 
@@ -122,7 +124,7 @@ The list should contain:
 heymaaz.claude-auth-v2
 ```
 
-In the TUI, run `/connect`, select **Claude Subscription**, and choose **Import Claude Code subscription**. Then use
-`/models` and choose a model under **Claude Subscription**.
+In the TUI, run `/connect`, select **Anthropic**, and choose **Import Claude Code subscription**. Then use `/models` and
+choose a model under **Anthropic**.
 
 For loader failures, inspect `~/.local/share/opencode/log/opencode.log` or run with `OPENCODE_LOG_LEVEL=DEBUG`.
