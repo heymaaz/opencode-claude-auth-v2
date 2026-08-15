@@ -1,6 +1,6 @@
 {
   "name": "opencode-claude-auth-v2",
-  "version": "0.1.0-beta.3",
+  "version": "0.2.0-beta.1",
   "description": "OpenCode 2 plugin that uses your Claude Code subscription credentials.",
   "keywords": [
     "anthropic",
