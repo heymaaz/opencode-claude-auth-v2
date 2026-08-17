@@ -12,6 +12,7 @@ import {
   loadPersistedAccountSource,
   refreshAccountsList,
   refreshViaOAuth,
+  reloadCredentialsFromSource,
   saveAccountSource,
   setActiveAccountSource,
 } from "./credentials.ts"
@@ -108,11 +109,6 @@ function oauth(accounts: ReturnType<typeof readAllClaudeAccounts>) {
     refresh: (value) =>
       Effect.tryPromise({
         try: async () => {
-          const refreshed = await refreshViaOAuth(value.refresh)
-          if (!refreshed)
-            throw new Error(
-              "Claude OAuth refresh failed. Run `claude` to re-authenticate.",
-            )
           const source =
             typeof value.metadata?.source === "string"
               ? value.metadata.source
@@ -121,6 +117,35 @@ function oauth(accounts: ReturnType<typeof readAllClaudeAccounts>) {
             typeof value.metadata?.configDir === "string"
               ? value.metadata.configDir
               : undefined
+
+          // OpenCode persists whatever this hook returns and replays that
+          // same value on every future refresh, forever, until we return
+          // something different. If `claude` has since rotated credentials
+          // independently of this connection (a fresh interactive login,
+          // its own periodic refresh, ...), the stored refresh token goes
+          // permanently stale and every refresh fails with invalid_grant
+          // even though a working credential is sitting in the keychain
+          // right now. The keychain is the real source of truth, so check
+          // it before ever attempting a network refresh with a token that
+          // may already be dead.
+          if (source) setActiveAccountSource(source)
+          const fresh = reloadCredentialsFromSource()
+          if (fresh && fresh.refreshToken !== value.refresh) {
+            log("refresh_resynced_from_keychain", { source })
+            return Credential.OAuth.make({
+              ...value,
+              methodID: METHOD_ID,
+              access: fresh.accessToken,
+              refresh: fresh.refreshToken,
+              expires: fresh.expiresAt,
+            })
+          }
+
+          const refreshed = await refreshViaOAuth(value.refresh)
+          if (!refreshed)
+            throw new Error(
+              "Claude OAuth refresh failed. Run `claude` to re-authenticate.",
+            )
           if (source)
             writeBackCredentials(source, refreshed, configDir, value.access)
           return Credential.OAuth.make({
