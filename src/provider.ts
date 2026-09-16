@@ -1,5 +1,8 @@
 import crypto from "node:crypto"
-import { createAnthropic } from "@ai-sdk/anthropic"
+import {
+  createAnthropic,
+  type AnthropicProviderSettings,
+} from "@ai-sdk/anthropic"
 import {
   addExcludedBeta,
   getExcludedBetas,
@@ -31,6 +34,7 @@ import { transformBody, transformResponseStream } from "./transforms.ts"
 const sessionID = crypto.randomUUID()
 
 type Fetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+type AnthropicFetch = NonNullable<AnthropicProviderSettings["fetch"]>
 
 function getCliVersion() {
   return process.env.ANTHROPIC_CLI_VERSION ?? config.ccVersion
@@ -242,6 +246,10 @@ export function createClaudeSubscription(options: Record<string, unknown>) {
   return createAnthropic({
     ...options,
     apiKey: accessToken,
-    fetch: claudeSubscriptionFetch(accessToken, upstream, source),
+    fetch: claudeSubscriptionFetch(
+      accessToken,
+      upstream,
+      source,
+    ) as AnthropicFetch,
   })
 }

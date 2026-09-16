@@ -1,6 +1,9 @@
 import { log } from "./logger.ts"
 
-export type FetchFn = typeof fetch
+export type FetchFn = (
+  input: RequestInfo | URL,
+  init?: RequestInit,
+) => Promise<Response>
 
 // Maximum delay before we give up retrying and surface the error.
 // A retry-after longer than this signals a quota/usage-limit reset (hours away)

@@ -1,4 +1,4 @@
-import { Plugin, Provider } from "@opencode/plugin"
+import { Plugin } from "@opencode/plugin"
 import type { IntegrationOAuthMethodRegistration } from "@opencode/plugin/promise/integration"
 import type { SessionRequest } from "@opencode/plugin/promise/session"
 import {
@@ -16,6 +16,7 @@ import {
   realOAuthDeps,
   refreshOAuthCredential,
 } from "./oauth-method.ts"
+import { configureAnthropicProvider, PROVIDER_ID } from "./provider-config.ts"
 
 export * from "./betas.ts"
 export * from "./credentials.ts"
@@ -24,10 +25,8 @@ export * from "./provider.ts"
 export * from "./signing.ts"
 export * from "./transforms.ts"
 
-const PROVIDER_ID = Provider.ID.make("anthropic")
 const SYSTEM_IDENTITY =
   "You are Claude Code, Anthropic's official CLI for Claude."
-const PROVIDER_PACKAGE = `aisdk:${new URL("./provider.js", import.meta.url).href}`
 
 /**
  * Session request kinds that reach the model and are billed to the connected
@@ -109,21 +108,9 @@ export const ClaudeAuthPlugin = Plugin.define({
     }
     await loadConnection()
 
-    await ctx.catalog.transform((catalog) => {
-      const anthropic = catalog.provider.get(PROVIDER_ID)
-      if (!anthropic) return
-      catalog.provider.update(PROVIDER_ID, (provider) => {
-        provider.name = "Anthropic"
-        provider.integrationID = INTEGRATION_ID
-        provider.package = PROVIDER_PACKAGE
-      })
-      for (const [modelID] of anthropic.models) {
-        catalog.model.update(PROVIDER_ID, modelID, (model) => {
-          model.package = PROVIDER_PACKAGE
-          if (subscription) model.cost = []
-        })
-      }
-    })
+    await ctx.provider.transform((editor) =>
+      configureAnthropicProvider(editor, subscription),
+    )
 
     // Re-evaluate when the user switches credentials so the catalog follows
     // the active connection instead of whatever was selected at startup.
@@ -139,7 +126,7 @@ export const ClaudeAuthPlugin = Plugin.define({
         ) {
           const before: boolean = subscription
           await loadConnection()
-          if (subscription !== before) await ctx.catalog.reload()
+          if (subscription !== before) await ctx.provider.reload()
         }
       }
     })().catch((cause) => {
