@@ -140,7 +140,7 @@ replace the stored connection or switch Claude Code accounts.
 
 That community provider runs the Claude Agent SDK as its own agent harness. Its AI SDK v6 implementation does not support
 application-provided custom tools. OpenCode needs model tool calls returned to its own permissioned tool loop, so this plugin
-uses `@ai-sdk/anthropic` with a custom transport instead.
+uses OpenCode 2's native Anthropic provider. Its HTTP hooks adjust requests and responses for Claude Code subscription billing.
 
 ## Credential Sources
 
