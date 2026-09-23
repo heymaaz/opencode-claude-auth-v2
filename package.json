@@ -70,10 +70,10 @@
   },
   "devDependencies": {
     "@opencode/client": "latest",
-    "@types/node": "^25.5.0",
-    "oxfmt": "0.41.0",
-    "oxlint": "1.56.0",
-    "typescript": "^5.0.0"
+    "@types/node": "^25.9.8",
+    "oxfmt": "^0.41.0",
+    "oxlint": "^1.85.0",
+    "typescript": "^5.9.3"
   },
-  "packageManager": "pnpm@10.32.1"
+  "packageManager": "pnpm@12.6.0"
 }
