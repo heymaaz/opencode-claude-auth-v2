@@ -5,23 +5,14 @@
 ```bash
 pnpm run build
 pnpm run lint
-
-# Keep unit tests from reading real Claude credentials. In particular, the
-# HTTP-hook test expects a fixture token and can print a real token on failure.
-(
-  tmp=$(mktemp -d)
-  trap 'rm -rf "$tmp"' EXIT
-  mkdir -p "$tmp/bin" "$tmp/home"
-  printf '#!/bin/sh\nexit 44\n' > "$tmp/bin/security"
-  chmod +x "$tmp/bin/security"
-  HOME="$tmp/home" CLAUDE_CONFIG_DIR="$tmp/home/.claude" \
-    PATH="$tmp/bin:$PATH" pnpm test
-)
+pnpm run test:isolated
 
 # Run separately with real credentials; do not use the unit-test environment.
 pnpm test:headless
 ```
 
+`test:isolated` prevents unit tests from reading real Claude credentials. The same test command
+runs automatically during `pnpm publish` through `prepublishOnly`.
 The headless test requires macOS, `opencode` V2 on PATH, and valid Claude Code credentials.
 Its credential-refresh scenarios can fail when the OAuth endpoint rate-limits the test; inspect
 the failure before treating it as a plugin regression.
