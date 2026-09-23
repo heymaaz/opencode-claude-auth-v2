@@ -26,6 +26,7 @@ import {
   CLAUDE_CODE_OAUTH_METADATA_KEY,
   CLAUDE_CODE_OAUTH_METADATA_VALUE,
 } from "./oauth-method.ts"
+import { withPromptCompat } from "./prompt-compat.ts"
 import { transformBody, transformResponseStream } from "./transforms.ts"
 
 const sessionID = crypto.randomUUID()
@@ -231,7 +232,7 @@ export function createClaudeSubscription(options: Record<string, unknown>) {
   if (
     options[CLAUDE_CODE_OAUTH_METADATA_KEY] !== CLAUDE_CODE_OAUTH_METADATA_VALUE
   )
-    return createAnthropic(options)
+    return withPromptCompat(createAnthropic(options))
 
   const accessToken = typeof options.apiKey === "string" ? options.apiKey : ""
   const upstream =
@@ -239,9 +240,11 @@ export function createClaudeSubscription(options: Record<string, unknown>) {
   // Written alongside the marker by buildOAuthCredential, so it arrives here
   // through the same metadata OpenCode spreads into the provider options.
   const source = typeof options.source === "string" ? options.source : undefined
-  return createAnthropic({
-    ...options,
-    apiKey: accessToken,
-    fetch: claudeSubscriptionFetch(accessToken, upstream, source),
-  })
+  return withPromptCompat(
+    createAnthropic({
+      ...options,
+      apiKey: accessToken,
+      fetch: claudeSubscriptionFetch(accessToken, upstream, source),
+    }),
+  )
 }
