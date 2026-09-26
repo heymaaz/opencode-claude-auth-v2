@@ -13,9 +13,9 @@ pnpm test:headless
 
 `test:isolated` prevents unit tests from reading real Claude credentials. The same test command
 runs automatically during `pnpm publish` through `prepublishOnly`.
-The headless test requires macOS, `opencode` V2 on PATH, and valid Claude Code credentials.
-Its credential-refresh scenarios can fail when the OAuth endpoint rate-limits the test; inspect
-the failure before treating it as a plugin regression.
+The headless smoke test requires macOS, `opencode` V2 on PATH, and valid Claude Code credentials.
+It verifies a live request using fresh credentials; credential refresh is covered by unit tests,
+not by this smoke test.
 
 ## 2. Commit the changes
 
