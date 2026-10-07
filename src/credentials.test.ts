@@ -105,6 +105,11 @@ async function loadCredentialsWithCountingKeychain(
   const tempLogger = join(tempDir, "logger.ts")
   const tempCredentials = join(tempDir, "credentials.ts")
   const tempHttp = join(tempDir, "http.ts")
+  await writeFile(
+    join(tempDir, "model-config.ts"),
+    await readFile(new URL("./model-config.ts", import.meta.url), "utf8"),
+    "utf8",
+  )
   const sourceCredentials = await readFile(
     new URL("./credentials.ts", import.meta.url),
     "utf8",
@@ -1455,6 +1460,11 @@ describe("syncAuthJson file permissions", () => {
         "utf8",
       )
       await writeFile(
+        join(tempDir, "model-config.ts"),
+        await readFile(new URL("./model-config.ts", import.meta.url), "utf8"),
+        "utf8",
+      )
+      await writeFile(
         join(tempDir, "refresh-backoff.ts"),
         await readFile(
           new URL("./refresh-backoff.ts", import.meta.url),
@@ -1555,6 +1565,11 @@ export function buildAccountLabels(creds) { return creds.map((_, i) => \`Account
       await writeFile(
         join(tempDir, "http.ts"),
         await readFile(new URL("./http.ts", import.meta.url), "utf8"),
+        "utf8",
+      )
+      await writeFile(
+        join(tempDir, "model-config.ts"),
+        await readFile(new URL("./model-config.ts", import.meta.url), "utf8"),
         "utf8",
       )
       await writeFile(
@@ -1671,6 +1686,47 @@ describe("refreshViaOAuth", () => {
     } finally {
       globalThis.fetch = originalFetch
       Date.now = originalNow
+    }
+  })
+
+  it("overrides the runtime User-Agent on OAuth refresh", async () => {
+    const originalFetch = globalThis.fetch
+    const originalUserAgent = process.env.ANTHROPIC_USER_AGENT
+    const originalVersion = process.env.ANTHROPIC_CLI_VERSION
+    const userAgents: string[] = []
+    delete process.env.ANTHROPIC_USER_AGENT
+    process.env.ANTHROPIC_CLI_VERSION = "2.1.292"
+
+    globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+      const userAgent =
+        new Headers(init?.headers).get("User-Agent") ?? "opencode/2.0.24"
+      userAgents.push(userAgent)
+      if (userAgent.startsWith("opencode/"))
+        return new Response(JSON.stringify({ error: "rate_limit_error" }), {
+          status: 429,
+          headers: { "retry-after": "3600" },
+        })
+      return new Response(
+        JSON.stringify({ access_token: "fresh-access", expires_in: 28_800 }),
+      )
+    }) as typeof fetch
+
+    try {
+      assert.ok(await refreshViaOAuth("current-refresh"))
+      process.env.ANTHROPIC_USER_AGENT = "custom-agent"
+      assert.ok(await refreshViaOAuth("current-refresh"))
+      assert.deepEqual(userAgents, [
+        "claude-cli/2.1.292 (external, sdk-cli)",
+        "custom-agent",
+      ])
+    } finally {
+      globalThis.fetch = originalFetch
+      if (originalUserAgent === undefined)
+        delete process.env.ANTHROPIC_USER_AGENT
+      else process.env.ANTHROPIC_USER_AGENT = originalUserAgent
+      if (originalVersion === undefined)
+        delete process.env.ANTHROPIC_CLI_VERSION
+      else process.env.ANTHROPIC_CLI_VERSION = originalVersion
     }
   })
 

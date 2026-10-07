@@ -19,6 +19,7 @@ import {
 import { resetExcludedBetas } from "./betas.ts"
 import { fetchWithRetry } from "./http.ts"
 import { log } from "./logger.ts"
+import { getUserAgent } from "./model-config.ts"
 import {
   classifyRefreshFailure,
   clearRefreshOutcome,
@@ -336,7 +337,11 @@ export async function refreshViaOAuthDetailed(
     log("refresh_started", { source: "oauth" })
     const response = await fetchWithRetry(OAUTH_TOKEN_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        // OpenCode's default User-Agent can trigger a 429 at the token endpoint.
+        "User-Agent": getUserAgent(),
+      },
       body: body.toString(),
       signal: controller.signal,
     })
